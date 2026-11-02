@@ -52,9 +52,10 @@ CRT closes `n ∣ P+1`.
 - `A085094.lean` — the theorem (282 lines) +
   `card_range_filter_dvd`
 - `A084017.lean` — generic extraction `pal_window_extract_gen`
-  (note: this file also states the *open* A084017 conjecture,
-  which carries one `sorry`; `A085094` does **not** depend on
-  it — see the axiom base above)
+  (snapshot 2026-11-02, zero `sorry`; this is the in-progress
+  development of the A084017 conjecture, whose headline theorem
+  is still being assembled — `A085094` does **not** depend on
+  it, see the axiom base above)
 - `A084013.lean`, `A077727.lean`, `A077739.lean`,
   `A077754.lean`, `CornerTable.lean` — the shared engine:
   sumset growth lemma, `ofDigits` helpers, witness tables used
