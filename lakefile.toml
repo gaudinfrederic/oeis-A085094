@@ -1,0 +1,30 @@
+name = "a085094"
+version = "0.1.0"
+defaultTargets = ["A085094"]
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "v4.35.0"
+
+[[lean_lib]]
+name = "CornerTable"
+
+[[lean_lib]]
+name = "A077754"
+
+[[lean_lib]]
+name = "A077739"
+
+[[lean_lib]]
+name = "A077727"
+
+[[lean_lib]]
+name = "A084013"
+
+[[lean_lib]]
+name = "A084017"
+
+[[lean_lib]]
+name = "A085094"
