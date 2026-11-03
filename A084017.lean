@@ -3318,3 +3318,2075 @@ theorem P_val_m {m le K t e : ℕ} (d : ℕ → ℕ)
     fun k => by ring
   rw [Finset.sum_congr rfl fun k _ => hterm k, ← Finset.mul_sum]
   ring
+
+
+
+/-! ## Sommes de segments dans `ZMod m` — croissance de sumsets et
+    paires `gcd`-1 (voie gadgets à somme constante, plan Argon). -/
+
+namespace A084017
+
+open Finset List Nat BigOperators Pointwise
+
+set_option maxHeartbeats 800000
+
+variable {m : ℕ} [NeZero m]
+
+
+/-- Le segment `{0·w, 1·w, ..., k·w}` dans `ZMod m`. -/
+@[irreducible]
+noncomputable def seg (w : ZMod m) (k : ℕ) : Finset (ZMod m) :=
+  Finset.image (fun j : ℕ => (j : ZMod m) * w) (Finset.range (k + 1))
+
+theorem mem_seg {w : ZMod m} {k : ℕ} {x : ZMod m} :
+    x ∈ seg w k ↔ ∃ j ≤ k, (j : ZMod m) * w = x := by
+  simp [seg]
+
+theorem seg_succ (w : ZMod m) (k : ℕ) :
+    seg w (k + 1) = insert (((k + 1 : ℕ) : ZMod m) * w) (seg w k) := by
+  simp [seg, Finset.range_add_one]
+
+theorem seg_mono {w : ZMod m} {a b : ℕ} (h : a ≤ b) : seg w a ⊆ seg w b := by
+  intro x hx
+  simp [seg] at hx ⊢
+  obtain ⟨j, hj, rfl⟩ := hx
+  exact ⟨j, le_trans hj h, rfl⟩
+
+theorem zero_mem_seg (w : ZMod m) (k : ℕ) : (0 : ZMod m) ∈ seg w k := by
+  simp [seg]
+  exact ⟨0, by simp⟩
+
+/-- Glissement : `seg w k + {w} ⊆ seg w (k+1)`. -/
+theorem seg_add_w (w : ZMod m) (k : ℕ) :
+    seg w k + {w} ⊆ seg w (k + 1) := by
+  intro x hx
+  rw [Finset.mem_add] at hx
+  obtain ⟨y, hy, z, hz, hsum⟩ := hx
+  rw [Finset.mem_singleton] at hz
+  subst hz
+  rw [← hsum]
+  rw [mem_seg] at hy ⊢
+  obtain ⟨j, hj, rfl⟩ := hy
+  exact ⟨j + 1, by omega, by push_cast; ring⟩
+
+theorem add_sing_sing (S : Finset (ZMod m)) (x y : ZMod m) :
+    (S + {x}) + {y} = S + {x + y} := by
+  ext e
+  simp [Finset.mem_add, add_assoc]
+
+theorem add_sing_zero (S : Finset (ZMod m)) :
+    S + ({(0 : ZMod m)}) = S := by
+  ext e
+  simp [Finset.mem_add]
+
+theorem seg_zero (w : ZMod m) : seg w 0 = ({(0 : ZMod m)}) := by
+  simp [seg]
+
+/-- `S + seg w k` grandit de ≥ 1 par pas, ou bien sature à `S + seg w m`. -/
+theorem card_add_seg_ge (S : Finset (ZMod m)) (w : ZMod m) (k : ℕ) :
+    min (S.card + k) ((S + seg w m).card) ≤ (S + seg w k).card := by
+  induction k with
+  | zero =>
+    rw [seg_zero, add_sing_zero]
+    simp
+  | succ k ih =>
+    set T := S + seg w k with hTdef
+    have hTk : T ⊆ S + seg w (k + 1) :=
+      Finset.add_subset_add_left (seg_mono (Nat.le_succ k))
+    by_cases hst : S + seg w (k + 1) = T
+    · -- cas saturé : T + {w} ⊆ T, donc S + seg w m ⊆ T
+      have hinv : T + {w} ⊆ T := by
+        have h1 : T + {w} ⊆ S + seg w (k + 1) := by
+          intro x hx
+          rw [Finset.mem_add] at hx
+          obtain ⟨t, ht, z, hz, hsum⟩ := hx
+          rw [Finset.mem_singleton] at hz
+          subst hz
+          rw [← hsum]
+          rw [hTdef, Finset.mem_add] at ht
+          obtain ⟨a, ha, b, hb, hs2⟩ := ht
+          rw [← hs2, add_assoc]
+          exact Finset.add_mem_add ha
+            (seg_add_w z k (Finset.add_mem_add hb (Finset.mem_singleton_self _)))
+        exact hst ▸ h1
+      have hS : S ⊆ T := by
+        intro x hx
+        have h := Finset.add_mem_add hx (zero_mem_seg w k)
+        rw [hTdef]
+        rwa [add_zero] at h
+      have hinvj : ∀ j : ℕ, S + {((j : ℕ) : ZMod m) * w} ⊆ T := by
+        intro j
+        induction j with
+        | zero =>
+          simp only [Nat.cast_zero, zero_mul]
+          rw [add_sing_zero]
+          exact hS
+        | succ j ih =>
+          have hstep : (((j + 1 : ℕ) : ZMod m) * w) = ((j : ℕ) : ZMod m) * w + w := by
+            push_cast; ring
+          rw [hstep]
+          rw [← add_sing_sing]
+          exact (Finset.add_subset_add ih (Finset.Subset.refl _)).trans hinv
+      have hsm : S + seg w m ⊆ T := by
+        intro x hx
+        rw [Finset.mem_add] at hx
+        obtain ⟨a, ha, b, hb, hsum⟩ := hx
+        rw [← hsum]
+        rw [mem_seg] at hb
+        obtain ⟨j, hj, rfl⟩ := hb
+        exact hinvj j (Finset.add_mem_add ha (Finset.mem_singleton_self _))
+      rw [hst]
+      exact le_trans (min_le_right _ _) (Finset.card_le_card hsm)
+    · -- cas non saturé : T ⊊ T_{k+1}, +1
+      have hss : T ⊂ S + seg w (k + 1) :=
+        Finset.ssubset_iff_subset_ne.mpr ⟨hTk, fun h => hst h.symm⟩
+      have hcard : T.card + 1 ≤ (S + seg w (k + 1)).card := Finset.card_lt_card hss
+      rcases Nat.lt_or_ge (S.card + k) ((S + seg w m).card) with hB | hB
+      · -- s + k < B : les deux min valent s+k et ≤ s+k+1
+        rw [min_eq_left (le_of_lt hB)] at ih
+        calc min (S.card + (k + 1)) (S + seg w m).card
+            ≤ S.card + (k + 1) := min_le_left _ _
+          _ = S.card + k + 1 := rfl
+          _ ≤ T.card + 1 := by omega
+          _ ≤ (S + seg w (k + 1)).card := hcard
+      · -- B ≤ s + k : les deux min valent B
+        rw [min_eq_right hB] at ih
+        calc min (S.card + (k + 1)) (S + seg w m).card
+            ≤ (S + seg w m).card := min_le_right _ _
+          _ ≤ T.card := ih
+          _ ≤ T.card + 1 := by omega
+          _ ≤ (S + seg w (k + 1)).card := hcard
+
+
+
+open Finset List Nat BigOperators Pointwise
+
+
+/-- `↑m = 0` dans `ZMod m`, donc `↑(m+1) = 1` : `seg w m` est `w`-invariant. -/
+theorem seg_m_stable (w : ZMod m) : seg w m + {w} ⊆ seg w m := by
+  intro x hx
+  rw [Finset.mem_add] at hx
+  obtain ⟨y, hy, z, hz, hsum⟩ := hx
+  rw [Finset.mem_singleton] at hz; subst hz
+  rw [← hsum]
+  rw [mem_seg] at hy ⊢
+  obtain ⟨j, hj, rfl⟩ := hy
+  rcases Nat.lt_or_ge j m with hjm | hjm
+  · exact ⟨j + 1, by omega, by push_cast; ring⟩
+  · have hjm' : j = m := by omega
+    refine ⟨1, Nat.one_le_iff_ne_zero.mpr (NeZero.ne m), ?_⟩
+    rw [hjm']
+    have hm : ((m : ℕ) : ZMod m) = 0 := CharP.cast_eq_zero (ZMod m) m
+    rw [Nat.cast_one, one_mul, hm, zero_mul, zero_add]
+
+/-- La translation par un singleton préserve le cardinal. -/
+theorem card_add_sing (T : Finset (ZMod m)) (g : ZMod m) :
+    (T + {g}).card = T.card := by
+  have h : T + {g} = T.image (· + g) := by
+    ext e
+    constructor
+    · intro h
+      rw [Finset.mem_add] at h
+      obtain ⟨y, hy, z, hz, hsum⟩ := h
+      rw [Finset.mem_singleton] at hz; subst hz
+      rw [Finset.mem_image]
+      exact ⟨y, hy, hsum⟩
+    · intro h
+      rw [Finset.mem_image] at h
+      obtain ⟨y, hy, hsum⟩ := h
+      rw [Finset.mem_add]
+      exact ⟨y, hy, g, Finset.mem_singleton_self g, hsum⟩
+  rw [h]
+  exact Finset.card_image_of_injective T (add_left_injective g)
+
+/-- `T + {g} ⊆ T` implique l'égalité (même cardinal). -/
+theorem eq_of_add_sing_subset {T : Finset (ZMod m)} {g : ZMod m}
+    (h : T + {g} ⊆ T) : T + {g} = T := by
+  apply Finset.eq_of_subset_of_card_le h
+  rw [card_add_sing]
+
+theorem inv_add {T : Finset (ZMod m)} {x y : ZMod m}
+    (hx : T + {x} = T) (hy : T + {y} = T) : T + {x + y} = T := by
+  rw [← add_sing_sing, hx, hy]
+
+theorem inv_neg {T : Finset (ZMod m)} {x : ZMod m}
+    (hx : T + {x} = T) : T + {-x} = T := by
+  have h : (T + {x}) + {-x} = T := by
+    rw [add_sing_sing]
+    simp [add_sing_zero]
+  rw [hx] at h
+  exact h
+
+/-- `(T + A) + {y} = (T + {y}) + A` : commutation d'un singleton. -/
+theorem add_sing_comm (T A : Finset (ZMod m)) (y : ZMod m) :
+    (T + A) + {y} = (T + {y}) + A := by
+  ext e
+  constructor <;> intro he
+  · rw [Finset.mem_add] at he
+    obtain ⟨u, hu, v, hv, hsum⟩ := he
+    rw [Finset.mem_singleton] at hv; subst hv
+    rw [Finset.mem_add] at hu
+    obtain ⟨t, ht, a, ha, htu⟩ := hu
+    have hge : (t + v) + a = e := by
+      rw [add_right_comm, htu, hsum]
+    exact Finset.mem_add.mpr
+      ⟨t + v, Finset.mem_add.mpr ⟨t, ht, v, Finset.mem_singleton_self v, rfl⟩, a, ha, hge⟩
+  · rw [Finset.mem_add] at he
+    obtain ⟨u, hu, a, ha, hsum⟩ := he
+    rw [Finset.mem_add] at hu
+    obtain ⟨t, ht, v, hv, htu⟩ := hu
+    rw [Finset.mem_singleton] at hv; subst hv
+    have hge : (t + a) + v = e := by
+      rw [← add_right_comm, htu, hsum]
+    exact Finset.mem_add.mpr
+      ⟨t + a, Finset.mem_add.mpr ⟨t, ht, a, ha, rfl⟩, v, Finset.mem_singleton_self v, hge⟩
+
+/-- `n • x`-invariance, par récurrence sur `n`. -/
+theorem inv_nsmul {T : Finset (ZMod m)} {x : ZMod m}
+    (hx : T + {x} = T) : ∀ n : ℕ, T + {n • x} = T := by
+  intro n
+  induction n with
+  | zero => simp [add_sing_zero]
+  | succ n ih =>
+    have hs : (n + 1) • x = n • x + x := by rw [succ_nsmul]
+    rw [hs]
+    exact inv_add ih hx
+
+/-- `z • x`-invariance pour `z : ℤ`. -/
+theorem inv_zsmul {T : Finset (ZMod m)} {x : ZMod m}
+    (hx : T + {x} = T) (z : ℤ) : T + {z • x} = T := by
+  cases z with
+  | ofNat n =>
+    have h : ((n : ℤ) • x) = n • x := by simp
+    rw [Int.ofNat_eq_coe, h]
+    exact inv_nsmul hx n
+  | negSucc n =>
+    have h1 : (Int.negSucc n • x) = -(((n + 1 : ℕ) : ℤ) • x) := by
+      have e : (Int.negSucc n : ℤ) = -((n : ℤ) + 1) := rfl
+      rw [e, neg_zsmul]
+      simp
+    rw [h1]
+    have h2 : (((n + 1 : ℕ) : ℤ) • x) = (n + 1 : ℕ) • x := by simp
+    rw [h2]
+    exact inv_neg (inv_nsmul hx (n + 1))
+
+
+
+open Finset List Nat BigOperators Pointwise
+
+
+/-- Bézout : `gcd(gcd a b, m) = 1` donne `x·a + y·b ≡ 1` dans `ZMod m` (`x y : ℤ`). -/
+theorem exists_comb {a b : ℕ} (hgcd : Nat.gcd (Nat.gcd a b) m = 1) :
+    ∃ x y : ℤ, (x : ZMod m) * (a : ZMod m) + (y : ZMod m) * (b : ZMod m) = 1 := by
+  have h1 := Nat.gcd_eq_gcd_ab (Nat.gcd a b) m
+  rw [hgcd] at h1
+  -- h1 : (1 : ℤ) = (Nat.gcd a b : ℤ) * u + m * v
+  have h2 := Nat.gcd_eq_gcd_ab a b
+  -- h2 : (Nat.gcd a b : ℤ) = a * ga + b * gb
+  refine ⟨a.gcdA b * (Nat.gcd a b).gcdA m, a.gcdB b * (Nat.gcd a b).gcdA m, ?_⟩
+  have eq : (a.gcdA b * (Nat.gcd a b).gcdA m : ℤ) * a
+      + (a.gcdB b * (Nat.gcd a b).gcdA m : ℤ) * b
+      = (Nat.gcd a b : ℤ) * (Nat.gcd a b).gcdA m := by
+    rw [h2]; ring
+  have key : (((Nat.gcd a b : ℤ) * (Nat.gcd a b).gcdA m : ℤ) : ZMod m) = 1 := by
+    have hm1 : ((Nat.gcd a b : ℤ) * (Nat.gcd a b).gcdA m : ℤ)
+        = 1 - (m : ℤ) * (Nat.gcd a b).gcdB m := by
+      rw [Nat.cast_one] at h1
+      linarith
+    rw [hm1]
+    push_cast
+    simp [CharP.cast_eq_zero (ZMod m) m]
+  have conv : ((a.gcdA b * (Nat.gcd a b).gcdA m : ℤ) : ZMod m) * (a : ZMod m)
+      + ((a.gcdB b * (Nat.gcd a b).gcdA m : ℤ) : ZMod m) * (b : ZMod m)
+      = (((a.gcdA b * (Nat.gcd a b).gcdA m : ℤ) * a
+          + (a.gcdB b * (Nat.gcd a b).gcdA m : ℤ) * b : ℤ) : ZMod m) := by
+    push_cast; ring
+  rw [conv, eq]
+  exact key
+
+/-- Si `T` est `w₁`- et `w₂`-invariant avec `gcd(w₁',w₂',m) = 1`, `T` est invariant
+    sous toute translation. -/
+theorem inv_all {T : Finset (ZMod m)} {w₁ w₂ : ZMod m} {a b : ℕ}
+    (hw₁ : T + {w₁} = T) (hw₂ : T + {w₂} = T)
+    (ha : w₁ = (a : ZMod m)) (hb : w₂ = (b : ZMod m))
+    (hgcd : Nat.gcd (Nat.gcd a b) m = 1) :
+    ∀ g : ZMod m, T + {g} = T := by
+  obtain ⟨x, y, hxy⟩ := exists_comb hgcd
+  have h1 : T + {(1 : ZMod m)} = T := by
+    rw [← hxy]
+    have hix : T + {((x : ℤ) : ZMod m) * w₁} = T := by
+      rw [← zsmul_eq_mul]
+      exact inv_zsmul hw₁ x
+    have hiy : T + {((y : ℤ) : ZMod m) * w₂} = T := by
+      rw [← zsmul_eq_mul]
+      exact inv_zsmul hw₂ y
+    rw [← ha, ← hb]
+    exact inv_add hix hiy
+  intro g
+  have hg : g = ((g.val : ℤ) • (1 : ZMod m)) := by
+    rw [zsmul_eq_mul]
+    simp
+  rw [hg]
+  exact inv_zsmul h1 _
+
+/-- Un ensemble non-vide invariant sous toute translation est `univ`. -/
+theorem eq_univ_of_inv_all {T : Finset (ZMod m)} (hT : T.Nonempty)
+    (h : ∀ g : ZMod m, T + {g} = T) : T = Finset.univ := by
+  apply Finset.eq_univ_iff_forall.mpr
+  intro y
+  obtain ⟨t, ht⟩ := hT
+  have hmem : t + (y - t) ∈ T + {y - t} :=
+    Finset.add_mem_add ht (Finset.mem_singleton_self _)
+  rw [h] at hmem
+  have : t + (y - t) = y := by simp
+  rwa [this] at hmem
+
+
+
+open Finset List Nat BigOperators Pointwise
+
+
+/-- `seg w k` est `w`-stable dès que `k ≥ m - 1` (alors `(k+1)·w` retombe dans `seg`). -/
+theorem seg_stable {w : ZMod m} {k : ℕ} (hk : m - 1 ≤ k) :
+    seg w k + {w} ⊆ seg w k := by
+  intro x hx
+  rw [Finset.mem_add] at hx
+  obtain ⟨y, hy, z, hz, hsum⟩ := hx
+  rw [Finset.mem_singleton] at hz; subst hz
+  rw [← hsum]
+  rw [mem_seg] at hy ⊢
+  obtain ⟨j, hj, rfl⟩ := hy
+  rcases Nat.lt_or_ge j k with hjk | hjk
+  · exact ⟨j + 1, by omega, by push_cast; ring⟩
+  · have hjk' : j = k := by omega
+    rw [hjk']
+    have hkm : m ≤ k + 1 := by omega
+    refine ⟨k + 1 - m, by have := NeZero.ne m; omega, ?_⟩
+    have e : ((k + 1 - m : ℕ) : ZMod m) = ((k + 1 : ℕ) : ZMod m) := by
+      rw [Nat.cast_sub hkm, CharP.cast_eq_zero (ZMod m) m, sub_zero]
+    rw [e]
+    push_cast
+    ring
+
+/-- `seg_m_stable` comme cas particulier (`k = m`). -/
+theorem seg_m_stable2 (w : ZMod m) : seg w m + {w} ⊆ seg w m :=
+  seg_stable (Nat.sub_le m 1)
+
+/-- Si `|S + seg w 8| < |S| + 8`, alors `S + seg w 8` est `w`-invariant. -/
+theorem seg8_invariant {S : Finset (ZMod m)} {w : ZMod m}
+    (h : (S + seg w 8).card < S.card + 8) : (S + seg w 8) + {w} = S + seg w 8 := by
+  have hg := card_add_seg_ge S w 8
+  refine Finset.eq_of_subset_of_card_le ?_ ?_
+  · intro x hx
+    rw [Finset.mem_add] at hx
+    obtain ⟨t, ht, z, hz, hsum⟩ := hx
+    rw [Finset.mem_singleton] at hz
+    rw [← hsum, hz]
+    rw [Finset.mem_add] at ht
+    obtain ⟨a', ha', b', hb', htu⟩ := ht
+    rw [← htu, add_assoc]
+    rcases Nat.lt_or_ge m 9 with hm | hm
+    · -- `m ≤ 8` : `seg w 8` déjà `w`-stable car `8 ≥ m - 1`.
+      have hbw : b' + w ∈ seg w 8 :=
+        seg_stable (k := 8) (by have := NeZero.ne m; omega)
+          (Finset.add_mem_add hb' (Finset.mem_singleton_self w))
+      exact Finset.add_mem_add ha' hbw
+    · -- `m ≥ 9` : `hg` force `S + seg w 8 = S + seg w m`, puis `(j+1)·w ∈ seg w m`.
+      have hsub : seg w 8 ⊆ seg w m := seg_mono (by omega)
+      have hsub2 : S + seg w 8 ⊆ S + seg w m := Finset.add_subset_add_left hsub
+      have hcard : (S + seg w m).card ≤ (S + seg w 8).card := by
+        have hmin : min (S.card + 8) (S + seg w m).card = (S + seg w m).card := by
+          apply min_eq_right
+          by_contra hc
+          push_neg at hc
+          rw [min_eq_left (le_of_lt hc)] at hg
+          omega
+        rw [hmin] at hg
+        exact hg
+      have heq : S + seg w 8 = S + seg w m := Finset.eq_of_subset_of_card_le hsub2 hcard
+      rw [mem_seg] at hb'
+      obtain ⟨j, hj, rfl⟩ := hb'
+      have hbw : (↑j * w + w : ZMod m) ∈ seg w m :=
+        mem_seg.mpr ⟨j + 1, by omega, by push_cast; ring⟩
+      rw [heq]
+      exact Finset.add_mem_add ha' hbw
+  · rw [card_add_sing]
+
+/-- Paire de poids `gcd`-1 : `|S + seg w₁ 8 + seg w₂ 8| ≥ min(|S| + 8, m)`. -/
+theorem pair_covers {S : Finset (ZMod m)} {a b : ℕ} {w₁ w₂ : ZMod m}
+    (ha : w₁ = (a : ZMod m)) (hb : w₂ = (b : ZMod m))
+    (hgcd : Nat.gcd (Nat.gcd a b) m = 1) (hS0 : (0 : ZMod m) ∈ S) :
+    min (S.card + 8) m ≤ (S + seg w₁ 8 + seg w₂ 8).card := by
+  set T₁ := S + seg w₁ 8 with hT1
+  set T₂ := T₁ + seg w₂ 8 with hT2
+  have hST1 : S ⊆ T₁ := by
+    intro x hx
+    have h := Finset.add_mem_add hx (zero_mem_seg w₁ 8)
+    rwa [add_zero] at h
+  have hT1T2 : T₁ ⊆ T₂ := by
+    intro x hx
+    have h := Finset.add_mem_add hx (zero_mem_seg w₂ 8)
+    rwa [add_zero] at h
+  by_cases hbig : S.card + 8 ≤ T₁.card
+  · calc min (S.card + 8) m ≤ S.card + 8 := min_le_left _ _
+      _ ≤ T₂.card := by
+        have : T₁.card ≤ T₂.card := Finset.card_le_card hT1T2
+        omega
+  · push_neg at hbig
+    have hbig' : (S + seg w₁ 8).card < S.card + 8 := by rwa [hT1] at hbig
+    have hw1 : T₁ + {w₁} = T₁ := by
+      rw [hT1]
+      exact seg8_invariant hbig'
+    by_cases hbig2 : T₁.card + 8 ≤ T₂.card
+    · have hs : S.card ≤ T₁.card := Finset.card_le_card hST1
+      calc min (S.card + 8) m ≤ S.card + 8 := min_le_left _ _
+        _ ≤ T₁.card + 8 := by omega
+        _ ≤ T₂.card := hbig2
+    · push_neg at hbig2
+      have hbig2' : (T₁ + seg w₂ 8).card < T₁.card + 8 := by rwa [hT2] at hbig2
+      have hw2 : T₂ + {w₂} = T₂ := by
+        rw [hT2]
+        exact seg8_invariant hbig2'
+      have hw1' : T₂ + {w₁} = T₂ := by
+        rw [hT2, add_sing_comm, hw1]
+      have hne : T₂.Nonempty := ⟨0, hT1T2 (hST1 hS0)⟩
+      have hu : T₂ = Finset.univ :=
+        eq_univ_of_inv_all hne (inv_all hw1' hw2 ha hb hgcd)
+      rw [hu, Finset.card_univ, ZMod.card]
+      exact min_le_right _ _
+
+end A084017
+
+/-! ## Itération de `pair_covers` : segments `seg _ 9` (coefficients `δ ∈ [0,9]`,
+    gadgets `(δ, 9-δ)`) — couverture complète de `ZMod m`. -/
+
+namespace A084017
+
+open Finset List Nat BigOperators Pointwise
+
+set_option maxHeartbeats 800000
+
+variable {m : ℕ} [NeZero m]
+
+/-- `0` appartient à toute somme de segments. -/
+theorem zero_mem_sum_seg (w : ℕ → ZMod m) (r : ℕ) :
+    (0 : ZMod m) ∈ ∑ i ∈ Finset.range r, seg (w i) 8 := by
+  induction r with
+  | zero => simp
+  | succ r ih =>
+    rw [Finset.sum_range_succ]
+    exact (zero_add (0 : ZMod m)) ▸
+      Finset.add_mem_add ih (zero_mem_seg (w r) 8)
+/-- `S ⊆ S + T` dès que `0 ∈ T`. -/
+theorem subset_add_of_zero_mem {S T : Finset (ZMod m)} (h0 : (0 : ZMod m) ∈ T) :
+    S ⊆ S + T := by
+  intro x hx
+  have h := Finset.add_mem_add hx h0
+  rwa [add_zero] at h
+/-- `min (x+8) m ≤ min (y+8) m` si `min x m ≤ y`. -/
+theorem min_add_le_min {x y m : ℕ} (h : min x m ≤ y) :
+    min (x + 8) m ≤ min (y + 8) m := by
+  rcases Nat.lt_or_ge x m with hc | hc
+  · rw [min_eq_left (le_of_lt hc)] at h
+    exact le_min (by omega) (min_le_right _ _)
+  · rw [min_eq_right hc] at h
+    rw [min_eq_right (by omega : m ≤ y + 8)]
+    exact min_le_right _ _
+/-- Itération : `r` paires de poids `gcd`-1 font grandir `S` de `8r` (saturé à `m`). -/
+theorem pair_covers_iter {S : Finset (ZMod m)} {w : ℕ → ZMod m} {a : ℕ → ℕ}
+    (ha : ∀ i, w i = (a i : ZMod m))
+    (hgcd : ∀ i, Nat.gcd (Nat.gcd (a (2 * i)) (a (2 * i + 1))) m = 1)
+    (hS0 : (0 : ZMod m) ∈ S) (r : ℕ) :
+    min (S.card + 8 * r) m ≤
+      (S + ∑ i ∈ Finset.range (2 * r), seg (w i) 8).card := by
+  induction r with
+  | zero => simp
+  | succ r ih =>
+    have h2r : 2 * (r + 1) = 2 * r + 1 + 1 := by ring
+    rw [h2r, Finset.sum_range_succ, Finset.sum_range_succ]
+    rw [← add_assoc, ← add_assoc]
+    have hT0 : (0 : ZMod m) ∈
+        S + ∑ i ∈ Finset.range (2 * r), seg (w i) 8 :=
+      (zero_add (0 : ZMod m)) ▸
+        Finset.add_mem_add hS0 (zero_mem_sum_seg w (2 * r))
+    have hstep := pair_covers (ha (2 * r)) (ha (2 * r + 1)) (hgcd r) hT0
+    have hmin : min (S.card + 8 * (r + 1)) m
+        ≤ min ((S + ∑ i ∈ Finset.range (2 * r), seg (w i) 8).card + 8) m := by
+      rw [show S.card + 8 * (r + 1) = (S.card + 8 * r) + 8 by ring]
+      rw [show (S + ∑ i ∈ Finset.range (2 * r), seg (w i) 8).card + 8
+          = (S + ∑ i ∈ Finset.range (2 * r), seg (w i) 8).card + 8 from rfl]
+      exact min_add_le_min ih
+    exact hmin.trans hstep
+/-- Version paramétrique de `seg8_invariant` : saturation ⇒ `w`-invariance. -/
+theorem segk_invariant {S : Finset (ZMod m)} {w : ZMod m} {k : ℕ}
+    (h : (S + seg w k).card < S.card + k) :
+    (S + seg w k) + {w} = S + seg w k := by
+  have hg := card_add_seg_ge S w k
+  refine Finset.eq_of_subset_of_card_le ?_ ?_
+  · intro x hx
+    rw [Finset.mem_add] at hx
+    obtain ⟨t, ht, z, hz, hsum⟩ := hx
+    rw [Finset.mem_singleton] at hz
+    rw [← hsum, hz]
+    rw [Finset.mem_add] at ht
+    obtain ⟨a', ha', b', hb', htu⟩ := ht
+    rw [← htu, add_assoc]
+    rcases Nat.lt_or_ge m (k + 2) with hm | hm
+    · -- `m ≤ k+1` : `seg w k` déjà stable car `k ≥ m - 1`.
+      have hbw : b' + w ∈ seg w k :=
+        seg_stable (k := k) (by have := NeZero.ne m; omega)
+          (Finset.add_mem_add hb' (Finset.mem_singleton_self w))
+      exact Finset.add_mem_add ha' hbw
+    · -- `m ≥ k+2` : `hg` force `S + seg w k = S + seg w m`.
+      have hsub : seg w k ⊆ seg w m := seg_mono (by omega)
+      have hsub2 : S + seg w k ⊆ S + seg w m := Finset.add_subset_add_left hsub
+      have hcard : (S + seg w m).card ≤ (S + seg w k).card := by
+        have hmin : min (S.card + k) (S + seg w m).card = (S + seg w m).card := by
+          apply min_eq_right
+          by_contra hc
+          push_neg at hc
+          rw [min_eq_left (le_of_lt hc)] at hg
+          omega
+        rw [hmin] at hg
+        exact hg
+      have heq : S + seg w k = S + seg w m :=
+        Finset.eq_of_subset_of_card_le hsub2 hcard
+      rw [mem_seg] at hb'
+      obtain ⟨j, hj, rfl⟩ := hb'
+      have hbw : (↑j * w + w : ZMod m) ∈ seg w m :=
+        mem_seg.mpr ⟨j + 1, by omega, by push_cast; ring⟩
+      rw [heq]
+      exact Finset.add_mem_add ha' hbw
+  · rw [card_add_sing]
+/-- Paire de poids `gcd`-1, segment `seg w 9` (10 coefficients `δ ∈ [0,9]`). -/
+theorem pair_covers9 {S : Finset (ZMod m)} {a b : ℕ} {w₁ w₂ : ZMod m}
+    (ha : w₁ = (a : ZMod m)) (hb : w₂ = (b : ZMod m))
+    (hgcd : Nat.gcd (Nat.gcd a b) m = 1) (hS0 : (0 : ZMod m) ∈ S) :
+    min (S.card + 9) m ≤ (S + seg w₁ 9 + seg w₂ 9).card := by
+  set T₁ := S + seg w₁ 9 with hT1
+  set T₂ := T₁ + seg w₂ 9 with hT2
+  have hST1 : S ⊆ T₁ := subset_add_of_zero_mem (zero_mem_seg w₁ 9)
+  have hT1T2 : T₁ ⊆ T₂ := subset_add_of_zero_mem (zero_mem_seg w₂ 9)
+  by_cases hbig : S.card + 9 ≤ T₁.card
+  · calc min (S.card + 9) m ≤ S.card + 9 := min_le_left _ _
+      _ ≤ T₂.card := le_trans hbig (Finset.card_le_card hT1T2)
+  · push_neg at hbig
+    have hbig' : (S + seg w₁ 9).card < S.card + 9 := by rwa [hT1] at hbig
+    have hw1 : T₁ + {w₁} = T₁ := by
+      rw [hT1]
+      exact segk_invariant hbig'
+    by_cases hbig2 : T₁.card + 9 ≤ T₂.card
+    · have hs : S.card ≤ T₁.card := Finset.card_le_card hST1
+      calc min (S.card + 9) m ≤ S.card + 9 := min_le_left _ _
+        _ ≤ T₁.card + 9 := by omega
+        _ ≤ T₂.card := hbig2
+    · push_neg at hbig2
+      have hbig2' : (T₁ + seg w₂ 9).card < T₁.card + 9 := by rwa [hT2] at hbig2
+      have hw2 : T₂ + {w₂} = T₂ := by
+        rw [hT2]
+        exact segk_invariant hbig2'
+      have hw1' : T₂ + {w₁} = T₂ := by
+        rw [hT2, add_sing_comm, hw1]
+      have hne : T₂.Nonempty := ⟨0, hT1T2 (hST1 hS0)⟩
+      have hu : T₂ = Finset.univ :=
+        eq_univ_of_inv_all hne (inv_all hw1' hw2 ha hb hgcd)
+      rw [hu, Finset.card_univ, ZMod.card]
+      exact min_le_right _ _
+/-- `0` appartient à toute somme de `seg _ 9`. -/
+theorem zero_mem_sum_seg9 (w : ℕ → ZMod m) (r : ℕ) :
+    (0 : ZMod m) ∈ ∑ i ∈ Finset.range r, seg (w i) 9 := by
+  induction r with
+  | zero => simp
+  | succ r ih =>
+    rw [Finset.sum_range_succ]
+    exact (zero_add (0 : ZMod m)) ▸
+      Finset.add_mem_add ih (zero_mem_seg (w r) 9)
+/-- `r` paires `gcd`-1 à segments `seg _ 9` : `+9r` de croissance, saturée à `m`. -/
+theorem pair_covers_iter9 {S : Finset (ZMod m)} {w : ℕ → ZMod m} {a : ℕ → ℕ}
+    (ha : ∀ i, w i = (a i : ZMod m))
+    (hgcd : ∀ i, Nat.gcd (Nat.gcd (a (2 * i)) (a (2 * i + 1))) m = 1)
+    (hS0 : (0 : ZMod m) ∈ S) (r : ℕ) :
+    min (S.card + 9 * r) m ≤
+      (S + ∑ i ∈ Finset.range (2 * r), seg (w i) 9).card := by
+  induction r with
+  | zero => simp
+  | succ r ih =>
+    have h2r : 2 * (r + 1) = 2 * r + 1 + 1 := by ring
+    rw [h2r, Finset.sum_range_succ, Finset.sum_range_succ]
+    rw [← add_assoc, ← add_assoc]
+    have hT0 : (0 : ZMod m) ∈
+        S + ∑ i ∈ Finset.range (2 * r), seg (w i) 9 :=
+      (zero_add (0 : ZMod m)) ▸
+        Finset.add_mem_add hS0 (zero_mem_sum_seg9 w (2 * r))
+    have hstep := pair_covers9 (ha (2 * r)) (ha (2 * r + 1)) (hgcd r) hT0
+    have hmin : min (S.card + 9 * (r + 1)) m
+        ≤ min ((S + ∑ i ∈ Finset.range (2 * r), seg (w i) 9).card + 9) m := by
+      rw [show S.card + 9 * (r + 1) = (S.card + 9 * r) + 9 by ring]
+      exact min_add_le_min' ih
+    exact hmin.trans hstep
+  where
+    min_add_le_min' {x y : ℕ} (h : min x m ≤ y) :
+        min (x + 9) m ≤ min (y + 9) m := by
+      rcases Nat.lt_or_ge x m with hc | hc
+      · rw [min_eq_left (le_of_lt hc)] at h
+        exact le_min (by omega) (min_le_right _ _)
+      · rw [min_eq_right hc] at h
+        rw [min_eq_right (by omega : m ≤ y + 9)]
+        exact min_le_right _ _
+/-- Couverture complète : `r ≥ (m - 1)/9` paires `gcd`-1 atteignent tout `ZMod m`. -/
+theorem covers_univ {S : Finset (ZMod m)} {w : ℕ → ZMod m} {a : ℕ → ℕ}
+    (ha : ∀ i, w i = (a i : ZMod m))
+    (hgcd : ∀ i, Nat.gcd (Nat.gcd (a (2 * i)) (a (2 * i + 1))) m = 1)
+    (hS0 : (0 : ZMod m) ∈ S) {r : ℕ} (hr : m ≤ S.card + 9 * r) :
+    S + ∑ i ∈ Finset.range (2 * r), seg (w i) 9 = Finset.univ := by
+  have h := pair_covers_iter9 ha hgcd hS0 r
+  rw [min_eq_right hr] at h
+  exact Finset.eq_univ_of_card _ (by
+    rw [ZMod.card]
+    exact le_antisymm
+      (le_trans (Finset.card_le_univ _) (le_of_eq (ZMod.card m))) h)
+
+end A084017
+
+/-! ## `gcd` des poids gadgets — `gcd(W₁,W₂,m) = 1` quand les distances
+    miroir sont coprimes (`gcd(10^{D₁}-1, 10^{D₂}-1) = 9 ⊥ m`). -/
+
+namespace A084017
+
+/-- Poids gadget `W(a,D) = 9·10^a·(10^D - 1)` : le `gcd` de deux poids à
+    distances coprimes est copremier à `m` (m ⊥ 10, m ⊥ 9). C'est le point
+    clé : `gcd(10^{D₁}-1, 10^{D₂}-1) = 10^{gcd D₁ D₂} - 1 = 9 ⊥ m`. -/
+theorem wgt_pair_gcd {m : ℕ} (hm10 : Nat.Coprime m 10) (hm9 : Nat.Coprime m 9)
+    {a₁ a₂ D₁ D₂ : ℕ} (hD : Nat.gcd D₁ D₂ = 1) :
+    Nat.gcd (Nat.gcd (9 * 10 ^ a₁ * (10 ^ D₁ - 1)) (9 * 10 ^ a₂ * (10 ^ D₂ - 1))) m = 1 := by
+  set d := Nat.gcd (Nat.gcd (9 * 10 ^ a₁ * (10 ^ D₁ - 1)) (9 * 10 ^ a₂ * (10 ^ D₂ - 1))) m
+    with hd
+  have hdm : d ∣ m := Nat.gcd_dvd_right _ _
+  have hd10 : Nat.Coprime d 10 := Nat.Coprime.coprime_dvd_left hdm hm10
+  have hd9 : Nat.Coprime d 9 := Nat.Coprime.coprime_dvd_left hdm hm9
+  -- d | chaque poids
+  have hd1 : d ∣ 9 * 10 ^ a₁ * (10 ^ D₁ - 1) :=
+    (Nat.gcd_dvd_left _ _).trans (Nat.gcd_dvd_left _ _)
+  have hd2 : d ∣ 9 * 10 ^ a₂ * (10 ^ D₂ - 1) :=
+    (Nat.gcd_dvd_left _ _).trans (Nat.gcd_dvd_right _ _)
+  -- d ⊥ 9·10^a (car d ⊥ 9, d ⊥ 10, donc d ⊥ 9·10^a)
+  have hc1 : Nat.Coprime d (9 * 10 ^ a₁) := by
+    apply Nat.Coprime.mul_right hd9
+    exact Nat.Coprime.pow_right a₁ hd10
+  have hc2 : Nat.Coprime d (9 * 10 ^ a₂) := by
+    apply Nat.Coprime.mul_right hd9
+    exact Nat.Coprime.pow_right a₂ hd10
+  have hd1' : d ∣ 10 ^ D₁ - 1 := Nat.Coprime.dvd_of_dvd_mul_left hc1 hd1
+  have hd2' : d ∣ 10 ^ D₂ - 1 := Nat.Coprime.dvd_of_dvd_mul_left hc2 hd2
+  have hdR : d ∣ Nat.gcd (10 ^ D₁ - 1) (10 ^ D₂ - 1) :=
+    Nat.dvd_gcd hd1' hd2'
+  rw [Nat.pow_sub_one_gcd_pow_sub_one, hD, pow_one] at hdR
+  -- d | 9 et d | m, donc d | gcd 9 m = 1
+  have : d ∣ Nat.gcd 9 m := Nat.dvd_gcd hdR hdm
+  rwa [Nat.gcd_comm, hm9, Nat.dvd_one] at this
+
+end A084017
+
+/-! Gadgets Argon : factorisation du poids de paire, cast naturel,
+    formule de valeur du sandwich à gadgets, extraction du coefficient
+    function (mem_sum_seg) et lemme d'extraction gcd-1 (gadget_extract). -/
+namespace A084017
+
+/-- Le poids gadget `palW(2k) − palW(2k+1)` se factorise :
+    `9·10^{2k}·(10^{L-2-4k} − 1)` dans `ZMod m` (pour `4k + 2 ≤ L`). -/
+theorem palW_pair_factor {m L k : ℕ} (hk : 4 * k + 2 ≤ L) :
+    palW m L (2 * k) - palW m L (2 * k + 1)
+      = (9 : ZMod m) * (10 : ZMod m) ^ (2 * k)
+          * ((10 : ZMod m) ^ (L - 2 - 4 * k) - 1) := by
+  unfold palW
+  have h1 : L - 1 - 2 * k = (L - 2 - 4 * k) + (2 * k + 1) := by omega
+  have h2 : L - 1 - (2 * k + 1) = (L - 2 - 4 * k) + 2 * k := by omega
+  rw [h1, h2, pow_add, pow_add]
+  ring
+
+/-- Version naturelle : le poids gadget en entier. -/
+theorem wgt_cast {m a D : ℕ} :
+    ((9 * 10 ^ a * (10 ^ D - 1) : ℕ) : ZMod m)
+      = (9 : ZMod m) * 10 ^ a * (10 ^ D - 1) := by
+  push_cast
+  simp [Nat.cast_sub]
+
+end A084017
+
+namespace A084017
+
+/-- Valeur mod `m` du sandwich `de ++ ((G++C)++revG) ++ revde` :
+    `P = Pde + 10^{le}·(Cval·10^{2K} + Σ(9·palW + e_k·W_k))`. -/
+theorem gadget_val_m {m le K g : ℕ} (de : List ℕ) (hle : de.length = le)
+    (e : ℕ → ℕ) (he : ∀ k, e k ≤ 9) (C : List ℕ) (hC : C.length = g) :
+    Nat.ofDigits (10 : ZMod m)
+      (de ++ (((List.range (2 * K)).map (pairDigit e) ++ C)
+          ++ ((List.range (2 * K)).map (pairDigit e)).reverse)
+        ++ de.reverse)
+    = (Nat.ofDigits (10 : ZMod m) de
+        + Nat.ofDigits (10 : ZMod m) de.reverse * (10 : ZMod m) ^ (le + (4 * K + g)))
+      + (10 : ZMod m) ^ le
+          * (Nat.ofDigits (10 : ZMod m) C * (10 : ZMod m) ^ (2 * K)
+            + ∑ k ∈ Finset.range K,
+                ((9 : ZMod m) * palW m (4 * K + g) (2 * k + 1)
+                + (e k : ZMod m)
+                    * (palW m (4 * K + g) (2 * k) - palW m (4 * K + g) (2 * k + 1)))) := by
+  set G := (List.range (2 * K)).map (pairDigit e) with hG
+  set X := (G ++ C) ++ G.reverse with hX
+  have hGl : G.length = 2 * K := by rw [hG, List.length_map, List.length_range]
+  have hXl : X.length = 4 * K + g := by
+    rw [hX, List.length_append, List.length_append, hGl,
+      List.length_reverse, hGl, hC]; ring
+  have hlen : (de ++ X).length = le + (4 * K + g) := by
+    rw [List.length_append, hle, hXl]
+  rw [ofDigits_append', ofDigits_append', hlen]
+  have hInner := ofDigits_pair_center (m := m) (K := K) (g := g) e he C hC
+  rw [← hG] at hInner
+  rw [hX, hInner, hle]
+  ring
+
+end A084017
+
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+variable {m : ℕ} [NeZero m]
+
+/-- Un élément de `∑_{i<r} seg (w i) 9` est `∑ d_i·w_i` avec `d_i ≤ 9`. -/
+theorem mem_sum_seg {w : ℕ → ZMod m} {r : ℕ} {x : ZMod m}
+    (hx : x ∈ ∑ i ∈ Finset.range r, seg (w i) 9) :
+    ∃ d : ℕ → ℕ, (∀ i, d i ≤ 9)
+      ∧ x = ∑ i ∈ Finset.range r, (d i : ZMod m) * w i := by
+  induction r generalizing x with
+  | zero =>
+    rw [Finset.range_zero, Finset.sum_empty, mem_zero] at hx
+    exact ⟨fun _ => 0, fun _ => Nat.zero_le 9, by simpa using hx⟩
+  | succ r ih =>
+    rw [Finset.sum_range_succ] at hx
+    rw [Finset.mem_add] at hx
+    obtain ⟨y, hy, z, hz, hsum⟩ := hx
+    obtain ⟨d, hd, hx'⟩ := ih hy
+    rw [mem_seg] at hz
+    obtain ⟨j, hj, rfl⟩ := hz
+    refine ⟨Function.update d r j, ?_, ?_⟩
+    · intro i
+      by_cases hi : i = r
+      · rw [hi, Function.update_self]; exact hj
+      · rw [Function.update_of_ne hi]; exact hd i
+    · rw [← hsum, hx', Finset.sum_range_succ]
+      rw [Function.update_self]
+      rw [add_right_cancel_iff]
+      refine Finset.sum_congr rfl fun i hi => ?_
+      rw [Finset.mem_range] at hi
+      rw [Function.update_of_ne (by omega : i ≠ r)]
+
+end A084017
+
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+variable {m : ℕ} [NeZero m]
+
+/-- Extraction gadget : tout résidu `t` de `ZMod m` est `∑ e k·W_k` avec
+    `e k ≤ 9` chiffres — dès que `K/2` paires couvrent (`m ≤ 1 + 9·(K/2)`),
+    `g ≥ 3` impair (distances `D` positives impaires, diff 4, gcd 1). -/
+theorem gadget_extract {K g : ℕ} (hm10 : Nat.Coprime m 10) (hm9 : Nat.Coprime m 9)
+    (hg3 : 3 ≤ g) (hgodd : Odd g)
+    (hK : m ≤ 1 + 9 * (K / 2)) (t : ZMod m) :
+    ∃ e : ℕ → ℕ, (∀ k, e k ≤ 9)
+      ∧ (∑ k ∈ Finset.range K, (e k : ZMod m)
+          * (palW m (4 * K + g) (2 * k) - palW m (4 * K + g) (2 * k + 1))) = t := by
+  set L := 4 * K + g with hL
+  set r := K / 2 with hr
+  set a : ℕ → ℕ := fun i =>
+    if i < K then 9 * 10 ^ (2 * i) * (10 ^ (L - 2 - 4 * i) - 1) else 1 with ha
+  set w : ℕ → ZMod m := fun i =>
+    if i < K
+    then palW m L (2 * i) - palW m L (2 * i + 1) else 1 with hw
+  -- distances consécutives coprimes (positives impaires, diff 4)
+  have hDg : ∀ i, 2 * i + 1 < K
+      → Nat.gcd (L - 2 - 4 * (2 * i)) (L - 2 - 4 * (2 * i + 1)) = 1 := by
+    intro i hi
+    obtain ⟨c, hc⟩ := hgodd
+    have hD1pos : 1 ≤ L - 2 - 4 * (2 * i + 1) := by
+      rw [hL]; omega
+    have hD2 : L - 2 - 4 * (2 * i) = (L - 2 - 4 * (2 * i + 1)) + 4 := by omega
+    have hodd : Odd (L - 2 - 4 * (2 * i + 1)) := by
+      refine ⟨2 * K + c - 4 * i - 3, ?_⟩
+      rw [hL]
+      omega
+    rw [hD2, Nat.gcd_self_add_left]
+    have hd : Nat.gcd 4 (L - 2 - 4 * (2 * i + 1)) ∈ Nat.divisors 4 :=
+      Nat.mem_divisors.mpr ⟨Nat.gcd_dvd_left _ _, by norm_num⟩
+    rw [show Nat.divisors 4 = {1, 2, 4} from by native_decide,
+      Finset.mem_insert, Finset.mem_insert, Finset.mem_singleton] at hd
+    rcases hd with h1 | h2 | h4'
+    · exact h1
+    · exfalso
+      have hgd : Nat.gcd 4 (L - 2 - 4 * (2 * i + 1)) ∣ L - 2 - 4 * (2 * i + 1) :=
+        Nat.gcd_dvd_right _ _
+      rw [h2] at hgd
+      obtain ⟨c', hc'⟩ := hodd
+      omega
+    · exfalso
+      have hgd : Nat.gcd 4 (L - 2 - 4 * (2 * i + 1)) ∣ L - 2 - 4 * (2 * i + 1) :=
+        Nat.gcd_dvd_right _ _
+      rw [h4'] at hgd
+      obtain ⟨c', hc'⟩ := hodd
+      omega
+  -- hypothèses de covers_univ
+  have haw : ∀ i, w i = (a i : ZMod m) := by
+    intro i
+    by_cases hi : i < K
+    · rw [hw, ha]; dsimp only
+      rw [if_pos hi, if_pos hi, wgt_cast]
+      exact palW_pair_factor (m := m) (L := L) (k := i) (by rw [hL]; omega)
+    · rw [hw, ha]; dsimp only
+      rw [if_neg hi, if_neg hi]
+      simp
+  have hgcd : ∀ i, Nat.gcd (Nat.gcd (a (2 * i)) (a (2 * i + 1))) m = 1 := by
+    intro i
+    by_cases hi : 2 * i + 1 < K
+    · rw [ha]; dsimp only
+      rw [if_pos (by omega : 2 * i < K), if_pos hi]
+      exact wgt_pair_gcd hm10 hm9 (hDg i hi)
+    · rw [ha]; dsimp only
+      rw [if_neg (by omega : ¬ 2 * i + 1 < K)]
+      simp
+  have hS0 : (0 : ZMod m) ∈ ({0} : Finset (ZMod m)) := Finset.mem_singleton_self 0
+  have hcard : ({0} : Finset (ZMod m)).card = 1 := Finset.card_singleton 0
+  have hcover : ({0} : Finset (ZMod m))
+      + ∑ i ∈ Finset.range (2 * r), seg (w i) 9 = Finset.univ :=
+    covers_univ (m := m) haw hgcd hS0 (r := r) (by rw [hcard]; omega)
+  -- t ∈ {0} + Σ seg → extraire les chiffres
+  have ht : t ∈ ({0} : Finset (ZMod m))
+      + ∑ i ∈ Finset.range (2 * r), seg (w i) 9 := by
+    rw [hcover]; exact Finset.mem_univ t
+  rw [Finset.mem_add] at ht
+  obtain ⟨s, hs, c', hc', hsum⟩ := ht
+  rw [Finset.mem_singleton] at hs
+  obtain ⟨d, hd, hcx⟩ := mem_sum_seg hc'
+  refine ⟨fun k => if k < 2 * r then d k else 0, ?_, ?_⟩
+  · intro k
+    by_cases hk : k < 2 * r
+    · simp only [hk, ite_true]; exact hd k
+    · simp only [hk, ite_false]; exact Nat.zero_le 9
+  · have hsub : ∑ k ∈ Finset.range K,
+          ((if k < 2 * r then d k else 0 : ℕ) : ZMod m)
+          * (palW m L (2 * k) - palW m L (2 * k + 1))
+        = ∑ k ∈ Finset.range (2 * r), (d k : ZMod m)
+          * (palW m L (2 * k) - palW m L (2 * k + 1)) := by
+      have hss : Finset.range (2 * r) ⊆ Finset.range K := by
+        intro x hx; rw [Finset.mem_range] at hx ⊢; omega
+      rw [← Finset.sum_subset hss (fun k hk hk2 => by
+        rw [if_neg (mt Finset.mem_range.mpr hk2), Nat.cast_zero, zero_mul])]
+      refine Finset.sum_congr rfl fun k hk => ?_
+      rw [if_pos (Finset.mem_range.mp hk)]
+    rw [hsub]
+    have hwr : ∑ k ∈ Finset.range (2 * r), (d k : ZMod m)
+          * (palW m L (2 * k) - palW m L (2 * k + 1))
+        = ∑ k ∈ Finset.range (2 * r), (d k : ZMod m) * w k := by
+      refine Finset.sum_congr rfl fun k hk => ?_
+      rw [Finset.mem_range] at hk
+      rw [hw]; dsimp only
+      rw [if_pos (by omega : k < K)]
+    rw [hwr]
+    rw [← hcx, ← hsum, hs, zero_add]
+
+end A084017
+
+/-! Poids repunit `R_t = (10^t-1)/9` : gcd des repunits, coprimalite,
+    extraction gadget sur M coprime-10 (couvre le facteur 3^s). -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+variable {M : ℕ} [NeZero M]
+
+/-- Le repunit `R_t = (10^t - 1)/9` : `9 * R_t = 10^t - 1`. -/
+theorem nine_mul_repunit (t : ℕ) : 9 * ((10 ^ t - 1) / 9) = 10 ^ t - 1 := by
+  have h9 : 9 ∣ 10 ^ t - 1 := by
+    have hm : (10 : ℕ) ≡ 1 [MOD 9] := by decide
+    have h2 : (10 : ℕ) ^ t ≡ 1 ^ t [MOD 9] := hm.pow t
+    rw [one_pow] at h2
+    exact (Nat.modEq_iff_dvd' (Nat.one_le_pow t 10 (by norm_num))).mp h2.symm
+  exact Nat.mul_div_cancel' h9
+
+/-- `gcd` des repunits : `gcd(R_a, R_b) = R_{gcd a b}`. -/
+theorem repunit_gcd (a b : ℕ) :
+    Nat.gcd ((10 ^ a - 1) / 9) ((10 ^ b - 1) / 9)
+      = (10 ^ Nat.gcd a b - 1) / 9 := by
+  have h9a := nine_mul_repunit a
+  have h9b := nine_mul_repunit b
+  have h9g := nine_mul_repunit (Nat.gcd a b)
+  have h := Nat.gcd_mul_left 9 ((10 ^ a - 1) / 9) ((10 ^ b - 1) / 9)
+  rw [h9a, h9b, Nat.pow_sub_one_gcd_pow_sub_one] at h
+  rw [← h9g] at h
+  exact (Nat.mul_left_cancel (by norm_num : 0 < 9) h).symm
+
+/-- `R_{t+1} = 10·R_t + 1`. -/
+theorem repunit_succ (t : ℕ) :
+    (10 ^ (t + 1) - 1) / 9 = 10 * ((10 ^ t - 1) / 9) + 1 := by
+  have h9 := nine_mul_repunit t
+  have h10 := nine_mul_repunit (t + 1)
+  have hA : 9 * ((10 ^ (t + 1) - 1) / 9) = 9 * (10 * ((10 ^ t - 1) / 9) + 1) := by
+    rw [h10]
+    have hcalc : 10 ^ (t + 1) - 1 = 9 * (10 * ((10 ^ t - 1) / 9) + 1) := by
+      rw [Nat.mul_add, Nat.mul_one]
+      have e1 : 9 * (10 * ((10 ^ t - 1) / 9)) = 10 * (10 ^ t - 1) := by
+        rw [Nat.mul_left_comm, h9]
+      rw [e1]
+      have hp : 1 ≤ 10 ^ t := Nat.one_le_pow t 10 (by norm_num)
+      rw [Nat.mul_sub, Nat.mul_one, pow_succ]
+      omega
+    exact hcalc
+  exact Nat.mul_left_cancel (by norm_num : 0 < 9) hA
+
+/-- Le repunit `R_t` est copremier à 10 (pour `t ≥ 1`). -/
+theorem repunit_coprime10 {t : ℕ} (ht : 1 ≤ t) :
+    Nat.Coprime ((10 ^ t - 1) / 9) 10 := by
+  obtain ⟨t, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : t ≠ 0)
+  rw [Nat.succ_eq_add_one, repunit_succ]
+  have h : (10 : ℕ).Coprime (1 + ((10 ^ t - 1) / 9) * 10) :=
+    (Nat.coprime_add_mul_right_right 10 1 _).mpr (Nat.coprime_one_right 10)
+  have e : 10 * ((10 ^ t - 1) / 9) + 1 = 1 + ((10 ^ t - 1) / 9) * 10 := by ring
+  rw [e]
+  exact h.symm
+
+end A084017
+
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+variable {M : ℕ} [NeZero M]
+
+/-- Extraction gadget sur `M ⊥ 10` (M peut contenir `3^{v-4}`) : poids
+    `a'_k = 10^{2k}·R_{L-2-4k}` — gcd des paires = `10^{4i}` ⊥ M. -/
+theorem gadget_extract3 {K g : ℕ} (hM10 : M.Coprime 10)
+    (hg3 : 3 ≤ g) (hgodd : Odd g)
+    (hK : M ≤ 1 + 9 * (K / 2)) (t : ZMod M) :
+    ∃ e : ℕ → ℕ, (∀ k, e k ≤ 9)
+      ∧ (∑ k ∈ Finset.range K, (e k : ZMod M)
+          * (((10 : ℕ) ^ (2 * k)
+              * ((10 ^ (4 * K + g - 2 - 4 * k) - 1) / 9) : ℕ) : ZMod M)) = t := by
+  set L := 4 * K + g with hL
+  set r := K / 2 with hr
+  set a : ℕ → ℕ := fun i =>
+    if i < K then 10 ^ (2 * i) * ((10 ^ (L - 2 - 4 * i) - 1) / 9) else 1 with ha
+  set w : ℕ → ZMod M := fun i => (a i : ZMod M) with hw
+  -- distances consécutives coprimes (identique à gadget_extract)
+  have hDg : ∀ i, 2 * i + 1 < K
+      → Nat.gcd (L - 2 - 4 * (2 * i)) (L - 2 - 4 * (2 * i + 1)) = 1 := by
+    intro i hi
+    obtain ⟨c, hc⟩ := hgodd
+    have hD1pos : 1 ≤ L - 2 - 4 * (2 * i + 1) := by
+      rw [hL]; omega
+    have hD2 : L - 2 - 4 * (2 * i) = (L - 2 - 4 * (2 * i + 1)) + 4 := by omega
+    have hodd : Odd (L - 2 - 4 * (2 * i + 1)) := by
+      refine ⟨2 * K + c - 4 * i - 3, ?_⟩
+      rw [hL]
+      omega
+    rw [hD2, Nat.gcd_self_add_left]
+    have hd : Nat.gcd 4 (L - 2 - 4 * (2 * i + 1)) ∈ Nat.divisors 4 :=
+      Nat.mem_divisors.mpr ⟨Nat.gcd_dvd_left _ _, by norm_num⟩
+    rw [show Nat.divisors 4 = {1, 2, 4} from by native_decide,
+      Finset.mem_insert, Finset.mem_insert, Finset.mem_singleton] at hd
+    rcases hd with h1 | h2 | h4'
+    · exact h1
+    · exfalso
+      have hgd : Nat.gcd 4 (L - 2 - 4 * (2 * i + 1)) ∣ L - 2 - 4 * (2 * i + 1) :=
+        Nat.gcd_dvd_right _ _
+      rw [h2] at hgd
+      obtain ⟨c', hc'⟩ := hodd
+      omega
+    · exfalso
+      have hgd : Nat.gcd 4 (L - 2 - 4 * (2 * i + 1)) ∣ L - 2 - 4 * (2 * i + 1) :=
+        Nat.gcd_dvd_right _ _
+      rw [h4'] at hgd
+      obtain ⟨c', hc'⟩ := hodd
+      omega
+  have haw : ∀ i, w i = (a i : ZMod M) := fun i => rfl
+  have hgcd : ∀ i, Nat.gcd (Nat.gcd (a (2 * i)) (a (2 * i + 1))) M = 1 := by
+    intro i
+    by_cases hi : 2 * i + 1 < K
+    · rw [ha]; dsimp only
+      rw [if_pos (by omega : 2 * i < K), if_pos hi]
+      have hD1 : 1 ≤ L - 2 - 4 * (2 * i) := by rw [hL]; omega
+      have hD2 : 1 ≤ L - 2 - 4 * (2 * i + 1) := by rw [hL]; omega
+      -- gcd(10^{4i}R1, 10^{4i+2}R2) = 10^{4i}
+      have hg : Nat.gcd (10 ^ (2 * (2 * i)) * ((10 ^ (L - 2 - 4 * (2 * i)) - 1) / 9))
+          (10 ^ (2 * (2 * i + 1)) * ((10 ^ (L - 2 - 4 * (2 * i + 1)) - 1) / 9))
+          = 10 ^ (4 * i) := by
+        have e1 : 2 * (2 * i + 1) = 4 * i + 2 := by ring
+        have e2 : 2 * (2 * i) = 4 * i := by ring
+        rw [e1, e2, pow_add, Nat.mul_assoc, Nat.gcd_mul_left]
+        have hc10 : Nat.Coprime ((10 ^ (L - 2 - 4 * (2 * i)) - 1) / 9) (10 ^ 2) :=
+          (repunit_coprime10 hD1).pow_right 2
+        rw [show Nat.gcd ((10 ^ (L - 2 - 4 * (2 * i)) - 1) / 9)
+            (10 ^ 2 * ((10 ^ (L - 2 - 4 * (2 * i + 1)) - 1) / 9))
+            = Nat.gcd (10 ^ 2 * ((10 ^ (L - 2 - 4 * (2 * i + 1)) - 1) / 9))
+              ((10 ^ (L - 2 - 4 * (2 * i)) - 1) / 9) from Nat.gcd_comm _ _]
+        rw [Nat.Coprime.gcd_mul_left_cancel
+          ((10 ^ (L - 2 - 4 * (2 * i + 1)) - 1) / 9) hc10.symm]
+        rw [Nat.gcd_comm, repunit_gcd, hDg i hi]
+        simp
+      rw [hg]
+      exact (hM10.pow_right (4 * i)).symm
+    · rw [ha]; dsimp only
+      rw [if_neg (by omega : ¬ 2 * i + 1 < K)]
+      simp
+  have hS0 : (0 : ZMod M) ∈ ({0} : Finset (ZMod M)) := Finset.mem_singleton_self 0
+  have hcard : ({0} : Finset (ZMod M)).card = 1 := Finset.card_singleton 0
+  have hcover : ({0} : Finset (ZMod M))
+      + ∑ i ∈ Finset.range (2 * r), seg (w i) 9 = Finset.univ :=
+    covers_univ (m := M) haw hgcd hS0 (r := r) (by rw [hcard]; omega)
+  have ht : t ∈ ({0} : Finset (ZMod M))
+      + ∑ i ∈ Finset.range (2 * r), seg (w i) 9 := by
+    rw [hcover]; exact Finset.mem_univ t
+  rw [Finset.mem_add] at ht
+  obtain ⟨s, hs, c', hc', hsum⟩ := ht
+  rw [Finset.mem_singleton] at hs
+  obtain ⟨d, hd, hcx⟩ := mem_sum_seg hc'
+  refine ⟨fun k => if k < 2 * r then d k else 0, ?_, ?_⟩
+  · intro k
+    by_cases hk : k < 2 * r
+    · simp only [hk, ite_true]; exact hd k
+    · simp only [hk, ite_false]; exact Nat.zero_le 9
+  · have hsub : ∑ k ∈ Finset.range K,
+          ((if k < 2 * r then d k else 0 : ℕ) : ZMod M)
+          * (((10 : ℕ) ^ (2 * k)
+              * ((10 ^ (4 * K + g - 2 - 4 * k) - 1) / 9) : ℕ) : ZMod M)
+        = ∑ k ∈ Finset.range (2 * r), (d k : ZMod M)
+          * (((10 : ℕ) ^ (2 * k)
+              * ((10 ^ (4 * K + g - 2 - 4 * k) - 1) / 9) : ℕ) : ZMod M) := by
+      have hss : Finset.range (2 * r) ⊆ Finset.range K := by
+        intro x hx; rw [Finset.mem_range] at hx ⊢; omega
+      rw [← Finset.sum_subset hss (fun k hk hk2 => by
+        rw [if_neg (mt Finset.mem_range.mpr hk2), Nat.cast_zero, zero_mul])]
+      refine Finset.sum_congr rfl fun k hk => ?_
+      rw [if_pos (Finset.mem_range.mp hk)]
+    rw [hsub]
+    have hwr : ∑ k ∈ Finset.range (2 * r), (d k : ZMod M)
+          * (((10 : ℕ) ^ (2 * k)
+              * ((10 ^ (4 * K + g - 2 - 4 * k) - 1) / 9) : ℕ) : ZMod M)
+        = ∑ k ∈ Finset.range (2 * r), (d k : ZMod M) * w k := by
+      refine Finset.sum_congr rfl fun k hk => ?_
+      rw [Finset.mem_range] at hk
+      rw [hw, ha]; dsimp only
+      rw [if_pos (by omega : k < K)]
+    rw [hwr]
+    rw [← hcx, ← hsum, hs, zero_add]
+
+end A084017
+
+/-! Listes de chiffres a somme prescrite + palindrome a centre libre. -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Liste de chiffres de longueur `len` et somme exacte `s` (pour `s ≤ 9·len`). -/
+theorem exists_digit_list_sigma {len s : ℕ} (hs : s ≤ 9 * len) :
+    ∃ X : List ℕ, X.length = len ∧ X.sum = s ∧ ∀ x ∈ X, x < 10 := by
+  rcases Nat.lt_or_ge (s % 9) 1 with hr | hr
+  · -- s = 9q : X = q nines ++ zeros
+    refine ⟨List.replicate (s / 9) 9 ++ List.replicate (len - s / 9) 0, ?_, ?_, ?_⟩
+    · rw [List.length_append, List.length_replicate, List.length_replicate]
+      have hq : s / 9 ≤ len := by
+        have h : s = 9 * (s / 9) := by
+          have := Nat.div_add_mod s 9
+          omega
+        omega
+      omega
+    · simp only [List.sum_append, List.sum_replicate, nsmul_eq_mul, mul_zero,
+        add_zero, Nat.cast_id, mul_comm (s / 9) 9]
+      have h : s = 9 * (s / 9) := by
+        have := Nat.div_add_mod s 9
+        omega
+      omega
+    · intro x hx
+      rcases List.mem_append.mp hx with hx | hx
+      · have := List.mem_replicate.mp hx
+        omega
+      · have := List.mem_replicate.mp hx
+        omega
+  · -- s = 9q + r, r ≥ 1 : X = q nines ++ [r] ++ zeros
+    have hq : s / 9 + 1 ≤ len := by
+      have h : s = 9 * (s / 9) + s % 9 := (Nat.div_add_mod s 9).symm
+      omega
+    refine ⟨List.replicate (s / 9) 9 ++ s % 9 :: List.replicate (len - s / 9 - 1) 0,
+      ?_, ?_, ?_⟩
+    · rw [List.length_append, List.length_cons, List.length_replicate,
+        List.length_replicate]
+      omega
+    · simp only [List.sum_append, List.sum_cons, List.sum_replicate, nsmul_eq_mul,
+        mul_zero, add_zero, zero_add, Nat.cast_id, mul_comm (s / 9) 9]
+      have h : s = 9 * (s / 9) + s % 9 := (Nat.div_add_mod s 9).symm
+      omega
+    · intro x hx
+      rcases List.mem_append.mp hx with hx | hx
+      · have := List.mem_replicate.mp hx
+        omega
+      · rcases List.mem_cons.mp hx with hx | hx
+        · have := Nat.mod_lt s (by norm_num : 0 < 9)
+          omega
+        · have := List.mem_replicate.mp hx
+          omega
+
+/-- Concaténation palindrome : `X ++ [c] ++ X.reverse` est palindrome. -/
+theorem pal_center {X : List ℕ} (c : ℕ) :
+    (X ++ c :: X.reverse).Palindrome := by
+  apply List.Palindrome.of_reverse_eq
+  rw [List.reverse_append, List.reverse_cons, List.reverse_reverse]
+  simp [List.append_assoc]
+
+end A084017
+
+/-! Bord padde e = B*(1+10^T) : le libre, sigma(de) = 2 sigma(B), B|e. -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Bord paddé : `digits(B + B·10^T)` = `digits B ++ zéros ++ digits B`,
+    pour `T ≥ len(digits B)`. Donne `le` libre, `σ = 2σ(B)`, `B ∣ e`, `e % 10 = B % 10`. -/
+theorem border_mul_pow10 {B T : ℕ} (hB : B ≠ 0)
+    (hT : (Nat.digits 10 B).length ≤ T) :
+    Nat.digits 10 (B + B * 10 ^ T)
+      = Nat.digits 10 B ++ List.replicate (T - (Nat.digits 10 B).length) 0
+          ++ Nat.digits 10 B := by
+  set dB := Nat.digits 10 B with hdB
+  have hlast : dB.getLast (Nat.digits_ne_nil_iff_ne_zero.mpr hB) ≠ 0 :=
+    Nat.getLast_digit_ne_zero 10 hB
+  have hlt : ∀ l ∈ dB, l < 10 := fun l hl =>
+    Nat.digits_lt_base (by norm_num) hl
+  have hval : Nat.ofDigits 10
+        (dB ++ List.replicate (T - dB.length) 0 ++ dB) = B + B * 10 ^ T := by
+    rw [Nat.ofDigits_append, Nat.ofDigits_append_replicate_zero,
+      Nat.ofDigits_digits, List.length_append, List.length_replicate]
+    have hlen : dB.length + (T - dB.length) = T := Nat.add_sub_of_le hT
+    rw [hlen, mul_comm]
+  have hdig := Nat.digits_ofDigits 10 (by norm_num : 1 < 10)
+    (dB ++ List.replicate (T - dB.length) 0 ++ dB) ?_ ?_
+  · rw [hval] at hdig
+    exact hdig
+  · intro l hl
+    rcases List.mem_append.mp hl with hl | hl
+    · rcases List.mem_append.mp hl with hl | hl
+      · exact hlt l hl
+      · obtain ⟨_, rfl⟩ := List.mem_replicate.mp hl
+        norm_num
+    · exact hlt l hl
+  · intro h
+    rw [List.getLast_append_of_right_ne_nil _ _
+      (Nat.digits_ne_nil_iff_ne_zero.mpr hB)]
+    exact hlast
+
+/-- Corollaires : longueur et somme des chiffres du bord paddé. -/
+theorem border_mul_pow10_len_sum {B T : ℕ} (hB : B ≠ 0)
+    (hT : (Nat.digits 10 B).length ≤ T) :
+    (Nat.digits 10 (B + B * 10 ^ T)).length = T + (Nat.digits 10 B).length
+      ∧ (Nat.digits 10 (B + B * 10 ^ T)).sum = 2 * (Nat.digits 10 B).sum := by
+  rw [border_mul_pow10 hB hT]
+  constructor
+  · rw [List.length_append, List.length_append, List.length_replicate]
+    omega
+  · rw [List.sum_append, List.sum_append, List.sum_replicate]
+    ring
+
+end A084017
+
+/-! Centre repunit : C = rep_j ++ 0^T ++ [0] ++ 0^T ++ rep_j,
+    ofDigits C = (10^j-1)(1+10^{j+2T+1}), sigma=18j, 3^v|Cval ssi 3^{v-2}|j. -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Valeur d'un bloc de `j` neufs : `ofDigits (replicate j 9) = 10^j − 1`. -/
+theorem ofDigits_rep9 (j : ℕ) :
+    Nat.ofDigits 10 (List.replicate j 9) = 10 ^ j - 1 := by
+  induction j with
+  | zero => simp
+  | succ j ih =>
+    rw [List.replicate_succ, Nat.ofDigits_cons, ih, pow_succ]
+    have h1 : 1 ≤ 10 ^ j := Nat.one_le_pow _ _ (by norm_num)
+    omega
+
+/-- `x³ − 1 = (x−1)(x²+x+1)` en naturels. -/
+theorem pow3_sub_one (y : ℕ) (hy : 1 ≤ y) :
+    y ^ 3 - 1 = (y - 1) * (y ^ 2 + y + 1) := by
+  have hy3 : 1 ≤ y ^ 3 := Nat.one_le_pow _ _ hy
+  zify [hy, hy3]
+  ring
+
+/-- LTE élémentaire : `3^{k+2} ∣ 10^{3^k} − 1`. -/
+theorem three_pow2_dvd_pow10_sub_one (k : ℕ) :
+    3 ^ (k + 2) ∣ 10 ^ (3 ^ k) - 1 := by
+  induction k with
+  | zero => norm_num
+  | succ k ih =>
+    obtain ⟨t, ht⟩ := ih
+    have h1 : 1 ≤ 10 ^ (3 ^ k) := Nat.one_le_pow _ _ (by norm_num)
+    have h2 : (10 : ℕ) ^ (3 ^ (k + 1)) = (10 ^ (3 ^ k)) ^ 3 := by
+      rw [pow_succ, pow_mul]
+    rw [h2, pow3_sub_one _ h1, ht]
+    -- x = 3q+1 car 10^{3^k} ≡ 1 mod 3
+    have hxmod : (10 ^ (3 ^ k)) % 3 = 1 := by
+      rw [Nat.pow_mod]; norm_num
+    obtain ⟨q, hq⟩ : ∃ q, 10 ^ (3 ^ k) = 3 * q + 1 :=
+      ⟨(10 ^ (3 ^ k) - 1) / 3, by
+        have := Nat.div_add_mod (10 ^ (3 ^ k)) 3
+        omega⟩
+    rw [hq]
+    -- (3q+1)² + (3q+1) + 1 = 9q²+9q+3 = 3(3q²+3q+1) ; 3^{k+3} = 3·3^{k+2}
+    use t * (3 * q * q + 3 * q + 1)
+    rw [pow_succ 3 (k + 2)]
+    ring
+
+/-- `3^{v-2} ∣ j → 3^v ∣ 10^j − 1` (pour `v ≥ 2`). -/
+theorem pow3v_dvd_pow10_sub_one {v j : ℕ} (hv : 2 ≤ v) (hj : 3 ^ (v - 2) ∣ j) :
+    3 ^ v ∣ 10 ^ j - 1 := by
+  obtain ⟨t, rfl⟩ := hj
+  rw [pow_mul]
+  obtain ⟨s, hs⟩ := three_pow2_dvd_pow10_sub_one (v - 2)
+  rw [Nat.sub_add_cancel hv] at hs
+  have h10 : 1 ≤ 10 ^ (3 ^ (v - 2)) := Nat.one_le_pow _ _ (by norm_num)
+  have hx : (10 : ℕ) ^ (3 ^ (v - 2)) = 1 + 3 ^ v * s := by omega
+  rw [hx]
+  have hns : (3 ^ v * s : ℕ) ≡ 0 [MOD 3 ^ v] :=
+    Nat.modEq_zero_iff_dvd.mpr (Nat.dvd_mul_right _ _)
+  have hxmod1 : (1 + 3 ^ v * s : ℕ) ≡ 1 [MOD 3 ^ v] := by
+    have h := (Nat.ModEq.refl 1).add hns
+    simpa using h
+  have hmod : (1 + 3 ^ v * s : ℕ) ^ t ≡ 1 [MOD 3 ^ v] := by
+    induction t with
+    | zero => rfl
+    | succ t iht =>
+      rw [pow_succ]
+      simpa using Nat.ModEq.mul iht hxmod1
+  have hle : 1 ≤ (1 + 3 ^ v * s) ^ t := Nat.one_le_pow _ _ (by omega)
+  exact (Nat.modEq_iff_dvd' hle).mp hmod.symm
+
+end A084017
+
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Centre repunit `C = rep_j ++ 0^T ++ [0] ++ 0^T ++ rep_j` :
+    `ofDigits C = (10^j − 1)·(1 + 10^{j+2T+1})`, longueur `2j+2T+1`,
+    `σ = 18j`, palindrome, chiffres `< 10`. -/
+theorem center_repunit_val (j T : ℕ) :
+    Nat.ofDigits 10 (List.replicate j 9 ++ List.replicate T 0 ++ [0]
+        ++ List.replicate T 0 ++ List.replicate j 9)
+      = (10 ^ j - 1) * (1 + 10 ^ (j + 2 * T + 1)) := by
+  have h1 : Nat.ofDigits 10 (List.replicate j 9 ++ List.replicate T 0 ++ [0]
+      ++ List.replicate T 0) = 10 ^ j - 1 := by
+    rw [Nat.ofDigits_append_replicate_zero, Nat.ofDigits_append,
+      Nat.ofDigits_append_replicate_zero, ofDigits_rep9]
+    simp [Nat.ofDigits]
+  have hlen : ((List.replicate j 9 ++ List.replicate T 0 ++ [0]
+      ++ List.replicate T 0) : List ℕ).length = j + 2 * T + 1 := by
+    simp [List.length_append, List.length_replicate]
+    omega
+  rw [Nat.ofDigits_append, h1, ofDigits_rep9, hlen]
+  rw [mul_add, mul_one, mul_comm (10 ^ (j + 2 * T + 1)) (10 ^ j - 1)]
+
+theorem center_repunit_len_sum (j T : ℕ) :
+    (List.replicate j 9 ++ List.replicate T 0 ++ [0]
+        ++ List.replicate T 0 ++ List.replicate j 9).length = 2 * j + 2 * T + 1
+    ∧ (List.replicate j 9 ++ List.replicate T 0 ++ [0]
+        ++ List.replicate T 0 ++ List.replicate j 9).sum = 18 * j := by
+  constructor
+  · simp [List.length_append, List.length_replicate]
+    omega
+  · simp only [List.sum_append, List.sum_replicate, nsmul_eq_mul,
+      List.sum_cons, List.sum_nil, Nat.cast_id]
+    ring
+
+theorem center_repunit_pal (j T : ℕ) :
+    (List.replicate j 9 ++ List.replicate T 0 ++ [0]
+        ++ List.replicate T 0 ++ List.replicate j 9).Palindrome := by
+  apply List.Palindrome.of_reverse_eq
+  simp only [List.reverse_append, List.reverse_replicate, List.reverse_cons,
+    List.reverse_nil, List.append_assoc, List.cons_append, List.nil_append,
+    List.singleton_append]
+
+theorem center_repunit_lt10 (j T : ℕ) :
+    ∀ x ∈ (List.replicate j 9 ++ List.replicate T 0 ++ [0]
+        ++ List.replicate T 0 ++ List.replicate j 9), x < 10 := by
+  intro x hx
+  simp only [List.mem_append, List.mem_replicate, List.mem_cons,
+    List.not_mem_nil, or_false] at hx
+  omega
+
+/-- `3^{v-2} ∣ j` (v ≥ 2) ⟹ `3^v ∣ ofDigits C` — le facteur `10^j − 1`. -/
+theorem center_repunit_dvd3 {v j T : ℕ} (hv : 2 ≤ v) (hj : 3 ^ (v - 2) ∣ j) :
+    3 ^ v ∣ Nat.ofDigits 10 (List.replicate j 9 ++ List.replicate T 0 ++ [0]
+        ++ List.replicate T 0 ++ List.replicate j 9) := by
+  rw [center_repunit_val]
+  exact dvd_mul_of_dvd_left (pow3v_dvd_pow10_sub_one hv hj) _
+
+end A084017
+
+/-! Centre repunit pair : C = rep_j ++ 0^T ++ 0^T ++ rep_j. -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Centre pair `C = rep_j ++ 0^T ++ 0^T ++ rep_j` (= `X ++ revX`, `X = rep_j ++ 0^T`) :
+    `ofDigits C = (10^j−1)(1+10^{j+2T})`, longueur `2j+2T`, `σ = 18j`. -/
+theorem center_repunit_even_val (j T : ℕ) :
+    Nat.ofDigits 10 (List.replicate j 9 ++ List.replicate T 0
+        ++ List.replicate T 0 ++ List.replicate j 9)
+      = (10 ^ j - 1) * (1 + 10 ^ (j + 2 * T)) := by
+  have h1 : Nat.ofDigits 10 (List.replicate j 9 ++ List.replicate T 0
+      ++ List.replicate T 0) = 10 ^ j - 1 := by
+    rw [Nat.ofDigits_append_replicate_zero, Nat.ofDigits_append_replicate_zero,
+      ofDigits_rep9]
+  have hlen : ((List.replicate j 9 ++ List.replicate T 0
+      ++ List.replicate T 0) : List ℕ).length = j + 2 * T := by
+    simp [List.length_append, List.length_replicate]
+    omega
+  rw [Nat.ofDigits_append, h1, ofDigits_rep9, hlen]
+  rw [mul_add, mul_one, mul_comm (10 ^ (j + 2 * T)) (10 ^ j - 1)]
+
+theorem center_repunit_even_len_sum (j T : ℕ) :
+    (List.replicate j 9 ++ List.replicate T 0
+        ++ List.replicate T 0 ++ List.replicate j 9).length = 2 * j + 2 * T
+    ∧ (List.replicate j 9 ++ List.replicate T 0
+        ++ List.replicate T 0 ++ List.replicate j 9).sum = 18 * j := by
+  constructor
+  · simp [List.length_append, List.length_replicate]
+    omega
+  · simp only [List.sum_append, List.sum_replicate, nsmul_eq_mul, Nat.cast_id]
+    ring
+
+theorem center_repunit_even_pal (j T : ℕ) :
+    (List.replicate j 9 ++ List.replicate T 0
+        ++ List.replicate T 0 ++ List.replicate j 9).Palindrome := by
+  apply List.Palindrome.of_reverse_eq
+  simp only [List.reverse_append, List.reverse_replicate, List.append_assoc]
+
+theorem center_repunit_even_lt10 (j T : ℕ) :
+    ∀ x ∈ (List.replicate j 9 ++ List.replicate T 0
+        ++ List.replicate T 0 ++ List.replicate j 9), x < 10 := by
+  intro x hx
+  simp only [List.mem_append, List.mem_replicate] at hx
+  omega
+
+theorem center_repunit_even_dvd3 {v j T : ℕ} (hv : 2 ≤ v) (hj : 3 ^ (v - 2) ∣ j) :
+    3 ^ v ∣ Nat.ofDigits 10 (List.replicate j 9 ++ List.replicate T 0
+        ++ List.replicate T 0 ++ List.replicate j 9) := by
+  rw [center_repunit_even_val]
+  exact dvd_mul_of_dvd_left (pow3v_dvd_pow10_sub_one hv hj) _
+
+end A084017
+
+/-! Complement a 9 et sigma-filler : sigma(9BR_u) = 9u. -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Complément à 9 : `ofDigits L + ofDigits (map (9−·) L) = 10^{|L|} − 1`. -/
+theorem ofDigits_add_complement (L : List ℕ) (hL : ∀ d ∈ L, d ≤ 9) :
+    Nat.ofDigits 10 L + Nat.ofDigits 10 (L.map (9 - ·)) = 10 ^ L.length - 1 := by
+  induction L with
+  | nil => simp
+  | cons d t ih =>
+    have hd : d ≤ 9 := hL d List.mem_cons_self
+    have ht : ∀ x ∈ t, x ≤ 9 := fun x hx => hL x (List.mem_cons_of_mem _ hx)
+    rw [List.map_cons, Nat.ofDigits_cons, Nat.ofDigits_cons, List.length_cons,
+      pow_succ]
+    have h1 : 1 ≤ 10 ^ t.length := Nat.one_le_pow _ _ (by norm_num)
+    have := ih ht
+    omega
+
+/-- Somme du complément (forme additive) : `σ(map (9−·) L) + σ(L) = 9·|L|`. -/
+theorem sum_complement (L : List ℕ) (hL : ∀ d ∈ L, d ≤ 9) :
+    (L.map (9 - ·)).sum + L.sum = 9 * L.length := by
+  induction L with
+  | nil => simp
+  | cons d t ih =>
+    have hd : d ≤ 9 := hL d List.mem_cons_self
+    have ht : ∀ x ∈ t, x ≤ 9 := fun x hx => hL x (List.mem_cons_of_mem _ hx)
+    rw [List.map_cons, List.sum_cons, List.sum_cons, List.length_cons]
+    have := ih ht
+    omega
+
+/-- Somme du complément (forme soustraite). -/
+theorem sum_complement_sub (L : List ℕ) (hL : ∀ d ∈ L, d ≤ 9) :
+    (L.map (9 - ·)).sum = 9 * L.length - L.sum := by
+  have := sum_complement L hL
+  omega
+
+/-- `digits(10^u − B)` pour `1 ≤ B ≤ 10^u` et `len(digits(B−1)) < u` :
+    complément à 9 de `digits(B−1)` paddé à `u` positions. -/
+theorem digits_pow10_sub {B u : ℕ} (hB : B ≠ 0) (hBu : B ≤ 10 ^ u)
+    (hlen : (Nat.digits 10 (B - 1)).length < u) :
+    Nat.digits 10 (10 ^ u - B)
+      = (Nat.digits 10 (B - 1)
+          ++ List.replicate (u - (Nat.digits 10 (B - 1)).length) 0).map (9 - ·) := by
+  set D := Nat.digits 10 (B - 1) with hD
+  have hlt : ∀ l ∈ D, l < 10 := fun l hl =>
+    Nat.digits_lt_base (by norm_num) hl
+  have hlt' : ∀ l ∈ D ++ List.replicate (u - D.length) 0, l ≤ 9 := by
+    intro l hl
+    rcases List.mem_append.mp hl with hl | hl
+    · have := hlt l hl
+      omega
+    · have := (List.mem_replicate.mp hl).2
+      omega
+  have hval : Nat.ofDigits 10
+        ((D ++ List.replicate (u - D.length) 0).map (9 - ·)) = 10 ^ u - B := by
+    have hcomp := ofDigits_add_complement (D ++ List.replicate (u - D.length) 0)
+      hlt'
+    rw [List.length_append, List.length_replicate,
+      Nat.add_sub_of_le (Nat.le_of_lt hlen), Nat.ofDigits_append_replicate_zero,
+      Nat.ofDigits_digits] at hcomp
+    have hB1 : 1 ≤ B := Nat.one_le_iff_ne_zero.mpr hB
+    have h10 : 1 ≤ 10 ^ u := Nat.one_le_pow _ _ (by norm_num)
+    omega
+  have hdig := Nat.digits_ofDigits 10 (by norm_num : 1 < 10)
+    ((D ++ List.replicate (u - D.length) 0).map (9 - ·)) ?_ ?_
+  · rw [hval] at hdig
+    exact hdig
+  · intro l hl
+    rw [List.mem_map] at hl
+    obtain ⟨x, hx, rfl⟩ := hl
+    have := hlt' x hx
+    omega
+  · -- dernier élément = 9 − getLast(D ++ zeros) = 9 − 0 = 9
+    intro hnil
+    have hrep : List.replicate (u - D.length) 0 ≠ [] := by
+      intro h
+      rw [List.replicate_eq_nil_iff] at h
+      omega
+    rw [List.getLast_map, List.getLast_append_of_right_ne_nil _ _ hrep,
+      List.getLast_replicate]
+    norm_num
+
+end A084017
+
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- `σ(10^u − B) = 9u − σ(B−1)` pour `1 ≤ B ≤ 10^u`, `len(B−1) < u`. -/
+theorem sigma_pow10_sub {B u : ℕ} (hB : B ≠ 0) (hBu : B ≤ 10 ^ u)
+    (hlen : (Nat.digits 10 (B - 1)).length < u) :
+    (Nat.digits 10 (10 ^ u - B)).sum
+      = 9 * u - (Nat.digits 10 (B - 1)).sum := by
+  rw [digits_pow10_sub hB hBu hlen]
+  set D := Nat.digits 10 (B - 1)
+  have hlt : ∀ l ∈ D, l < 10 := fun l hl =>
+    Nat.digits_lt_base (by norm_num) hl
+  have hlt' : ∀ l ∈ D ++ List.replicate (u - D.length) 0, l ≤ 9 := by
+    intro l hl
+    rcases List.mem_append.mp hl with hl | hl
+    · have := hlt l hl
+      omega
+    · have := (List.mem_replicate.mp hl).2
+      omega
+  have h1 := sum_complement_sub (D ++ List.replicate (u - D.length) 0) hlt'
+  rw [List.length_append, List.length_replicate, List.sum_append,
+    List.sum_replicate, nsmul_eq_mul, mul_zero, add_zero,
+    Nat.add_sub_of_le (Nat.le_of_lt hlen)] at h1
+  omega
+
+/-- `digits(X + Y·10^T)` = chiffres de X, zéros de padding, chiffres de Y
+    (pour `len(X) ≤ T`, `Y ≠ 0`). Généralise `border_mul_pow10`. -/
+theorem digits_add_pow10 {X Y T : ℕ} (hX : X ≠ 0) (hY : Y ≠ 0)
+    (hT : (Nat.digits 10 X).length ≤ T) :
+    Nat.digits 10 (X + Y * 10 ^ T)
+      = Nat.digits 10 X ++ List.replicate (T - (Nat.digits 10 X).length) 0
+          ++ Nat.digits 10 Y := by
+  set dX := Nat.digits 10 X with hdX
+  set dY := Nat.digits 10 Y with hdY
+  have hlast : dY.getLast (Nat.digits_ne_nil_iff_ne_zero.mpr hY) ≠ 0 :=
+    Nat.getLast_digit_ne_zero 10 hY
+  have hlX : ∀ l ∈ dX, l < 10 := fun l hl =>
+    Nat.digits_lt_base (by norm_num) hl
+  have hlY : ∀ l ∈ dY, l < 10 := fun l hl =>
+    Nat.digits_lt_base (by norm_num) hl
+  have hval : Nat.ofDigits 10
+        (dX ++ List.replicate (T - dX.length) 0 ++ dY) = X + Y * 10 ^ T := by
+    rw [Nat.ofDigits_append, Nat.ofDigits_append_replicate_zero,
+      Nat.ofDigits_digits, Nat.ofDigits_digits, List.length_append,
+      List.length_replicate]
+    have hlen : dX.length + (T - dX.length) = T := Nat.add_sub_of_le hT
+    rw [hlen, mul_comm]
+  have hdig := Nat.digits_ofDigits 10 (by norm_num : 1 < 10)
+    (dX ++ List.replicate (T - dX.length) 0 ++ dY) ?_ ?_
+  · rw [hval] at hdig
+    exact hdig
+  · intro l hl
+    rcases List.mem_append.mp hl with hl | hl
+    · rcases List.mem_append.mp hl with hl | hl
+      · exact hlX l hl
+      · obtain ⟨_, rfl⟩ := List.mem_replicate.mp hl
+        norm_num
+    · exact hlY l hl
+  · intro h
+    rw [List.getLast_append_of_right_ne_nil _ _
+      (Nat.digits_ne_nil_iff_ne_zero.mpr hY)]
+    exact hlast
+
+/-- Somme des chiffres de `9·B·R_u = B·(10^u − 1)` : vaut `9u`
+    pour `B ≥ 1` et `len(B−1) < u`. -/
+theorem sigma_9_mul_repunit {B u : ℕ} (hB : B ≠ 0)
+    (hu : (Nat.digits 10 (B - 1)).length < u) :
+    (Nat.digits 10 (9 * B * ((10 ^ u - 1) / 9))).sum = 9 * u := by
+  -- digits(10^u − 1) = replicate u 9
+  have hrep : Nat.digits 10 (10 ^ u - 1) = List.replicate u 9 := by
+    have hval : ∀ w : ℕ, Nat.ofDigits 10 (List.replicate w 9)
+        = 10 ^ w - 1 := by
+      intro w
+      induction w with
+      | zero => simp [Nat.ofDigits]
+      | succ k ih =>
+        rw [List.replicate_succ, Nat.ofDigits_cons, ih, pow_succ]
+        have hX : 1 ≤ 10 ^ k := Nat.one_le_pow _ _ (by norm_num)
+        omega
+    have hval' := hval u
+    have hdig := Nat.digits_ofDigits 10 (by norm_num : 1 < 10)
+      (List.replicate u 9) ?_ ?_
+    · rw [hval'] at hdig
+      exact hdig
+    · intro l hl
+      obtain ⟨_, rfl⟩ := List.mem_replicate.mp hl
+      norm_num
+    · intro h
+      rw [List.getLast_replicate]
+      norm_num
+  have h9u : 9 * ((10 ^ u - 1) / 9) = 10 ^ u - 1 := nine_mul_repunit u
+  rw [show 9 * B * ((10 ^ u - 1) / 9) = B * (9 * ((10 ^ u - 1) / 9)) from by ring,
+    h9u]
+  by_cases hB1 : B = 1
+  · subst hB1
+    rw [one_mul, hrep, List.sum_replicate]
+    ring
+  · -- B ≥ 2 : B·(10^u − 1) = (10^u − B) + (B−1)·10^u
+    have hB2 : 2 ≤ B := by omega
+    have hBm1 : B - 1 ≠ 0 := by omega
+    have hBlt : B - 1 < 10 ^ u := by
+      calc B - 1 < 10 ^ (Nat.digits 10 (B-1)).length :=
+            Nat.lt_base_pow_length_digits (by norm_num)
+        _ ≤ 10 ^ u := Nat.pow_le_pow_right (by norm_num) (Nat.le_of_lt hu)
+    have hBu : B ≤ 10 ^ u := by omega
+    have hX : 10 ^ u - B ≠ 0 := by
+      intro h
+      have heq : 10 ^ u = B := by omega
+      rw [← heq] at hu
+      rw [hrep, List.length_replicate] at hu
+      omega
+    have hdecomp : B * (10 ^ u - 1) = (10 ^ u - B) + (B - 1) * 10 ^ u := by
+      rw [Nat.mul_sub, mul_one, Nat.sub_one_mul]
+      have hP : 10 ^ u ≤ B * 10 ^ u :=
+        Nat.le_mul_of_pos_left _ (by omega)
+      omega
+    rw [hdecomp]
+    have hlenX : (Nat.digits 10 (10 ^ u - B)).length ≤ u := by
+      rw [Nat.digits_length_le_iff (by norm_num : (1:ℕ) < 10)]
+      omega
+    rw [digits_add_pow10 hX hBm1 hlenX]
+    rw [List.sum_append, List.sum_append, List.sum_replicate, nsmul_eq_mul,
+      mul_zero, add_zero]
+    rw [sigma_pow10_sub hB hBu hu]
+    have hσ : (Nat.digits 10 (B - 1)).sum ≤ 9 * u := by
+      have hle : (Nat.digits 10 (B - 1)).sum
+          ≤ 9 * (Nat.digits 10 (B - 1)).length := by
+        have h := List.sum_le_card_nsmul (Nat.digits 10 (B - 1)) 9
+          (fun x hx => Nat.lt_succ_iff.mp (Nat.digits_lt_base (b := 10) (by norm_num) hx))
+        rwa [nsmul_eq_mul, mul_comm] at h
+      omega
+    omega
+
+end A084017
+
+/-! Bord sigma-filler : e = B + B*10^T2 + 9BR_u*10^T1. -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Liste des chiffres de `9·B·R_u = B·(10^u − 1)` (forme unifiée, `B ≥ 1`) :
+    `digits(10^u − B) ++ zeros ++ digits(B−1)`. -/
+theorem digits_9_mul_repunit {B u : ℕ} (hB : B ≠ 0)
+    (hu : (Nat.digits 10 (B - 1)).length < u) :
+    Nat.digits 10 (9 * B * ((10 ^ u - 1) / 9))
+      = Nat.digits 10 (10 ^ u - B)
+          ++ List.replicate (u - (Nat.digits 10 (10 ^ u - B)).length) 0
+          ++ Nat.digits 10 (B - 1) := by
+  have h9u := nine_mul_repunit u
+  rw [show 9 * B * ((10 ^ u - 1) / 9) = B * (9 * ((10 ^ u - 1) / 9)) from by ring,
+    h9u]
+  have hBlt : B - 1 < 10 ^ u := by
+    calc B - 1 < 10 ^ (Nat.digits 10 (B-1)).length :=
+          Nat.lt_base_pow_length_digits (by norm_num)
+      _ ≤ 10 ^ u := Nat.pow_le_pow_right (by norm_num) (Nat.le_of_lt hu)
+  have hBu : B ≤ 10 ^ u := by omega
+  have hlenX : (Nat.digits 10 (10 ^ u - B)).length ≤ u := by
+    rw [Nat.digits_length_le_iff (by norm_num : (1:ℕ) < 10)]
+    omega
+  have hdecomp : B * (10 ^ u - 1) = (10 ^ u - B) + (B - 1) * 10 ^ u := by
+    rw [Nat.mul_sub, mul_one, Nat.sub_one_mul]
+    have hP : 10 ^ u ≤ B * 10 ^ u :=
+      Nat.le_mul_of_pos_left _ (by omega)
+    have h10 : 1 ≤ 10 ^ u := Nat.one_le_pow _ _ (by norm_num)
+    omega
+  rw [hdecomp]
+  by_cases hBm1 : B - 1 = 0
+  · -- B = 1 : (10^u − 1) + 0 ; len(10^u−1) = u, digits(0) = []
+    have hB1 : B = 1 := by omega
+    subst hB1
+    rw [Nat.sub_self, zero_mul, add_zero]
+    have hrep : Nat.digits 10 (10 ^ u - 1) = List.replicate u 9 := by
+      have hval : ∀ w : ℕ, Nat.ofDigits 10 (List.replicate w 9)
+          = 10 ^ w - 1 := by
+        intro w
+        induction w with
+        | zero => simp [Nat.ofDigits]
+        | succ k ih =>
+          rw [List.replicate_succ, Nat.ofDigits_cons, ih, pow_succ]
+          have hX : 1 ≤ 10 ^ k := Nat.one_le_pow _ _ (by norm_num)
+          omega
+      have hdig := Nat.digits_ofDigits 10 (by norm_num : 1 < 10)
+        (List.replicate u 9) ?_ ?_
+      · rw [hval u] at hdig
+        exact hdig
+      · intro l hl
+        obtain ⟨_, rfl⟩ := List.mem_replicate.mp hl
+        norm_num
+      · intro h
+        rw [List.getLast_replicate]
+        norm_num
+    rw [hrep, List.length_replicate, Nat.sub_self, List.replicate_zero,
+      List.append_nil]
+    simp
+  · have hBm1' : B - 1 ≠ 0 := hBm1
+    have hX : 10 ^ u - B ≠ 0 := by
+      intro h
+      have heq : 10 ^ u = B := by omega
+      rw [← heq] at hu
+      have hrep : Nat.digits 10 (10 ^ u - 1) = List.replicate u 9 := by
+        have hval : ∀ w : ℕ, Nat.ofDigits 10 (List.replicate w 9)
+            = 10 ^ w - 1 := by
+          intro w
+          induction w with
+          | zero => simp [Nat.ofDigits]
+          | succ k ih =>
+            rw [List.replicate_succ, Nat.ofDigits_cons, ih, pow_succ]
+            have hX : 1 ≤ 10 ^ k := Nat.one_le_pow _ _ (by norm_num)
+            omega
+        have hdig := Nat.digits_ofDigits 10 (by norm_num : 1 < 10)
+          (List.replicate u 9) ?_ ?_
+        · rw [hval u] at hdig
+          exact hdig
+        · intro l hl
+          obtain ⟨_, rfl⟩ := List.mem_replicate.mp hl
+          norm_num
+        · intro h
+          rw [List.getLast_replicate]
+          norm_num
+      rw [hrep, List.length_replicate] at hu
+      omega
+    rw [digits_add_pow10 hX hBm1' hlenX]
+
+/-- Longueur de `digits(9·B·R_u)` : `u + len(B−1)`. -/
+theorem len_9_mul_repunit {B u : ℕ} (hB : B ≠ 0)
+    (hu : (Nat.digits 10 (B - 1)).length < u) :
+    (Nat.digits 10 (9 * B * ((10 ^ u - 1) / 9))).length
+      = u + (Nat.digits 10 (B - 1)).length := by
+  rw [digits_9_mul_repunit hB hu, List.length_append, List.length_append,
+    List.length_replicate]
+  have hlenX : (Nat.digits 10 (10 ^ u - B)).length ≤ u := by
+    rw [Nat.digits_length_le_iff (by norm_num : (1:ℕ) < 10)]
+    have hBlt : B - 1 < 10 ^ u := by
+      calc B - 1 < 10 ^ (Nat.digits 10 (B-1)).length :=
+            Nat.lt_base_pow_length_digits (by norm_num)
+        _ ≤ 10 ^ u := Nat.pow_le_pow_right (by norm_num) (Nat.le_of_lt hu)
+    have hBu : B ≤ 10 ^ u := by omega
+    omega
+  omega
+
+end A084017
+
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Bord avec filler σ : `e = B + B·10^{T₂} + 9·B·R_u·10^{T₁}` —
+    chiffres = `dB ++ 0^{T₂−lenB} ++ dB ++ 0^{T₁−T₂−lenB} ++ digits(9BR_u)`. -/
+theorem border_filler {B T₂ T₁ u : ℕ} (hB : B ≠ 0)
+    (hT₂ : (Nat.digits 10 B).length ≤ T₂)
+    (hT₁ : T₂ + (Nat.digits 10 B).length ≤ T₁)
+    (hu : (Nat.digits 10 (B - 1)).length < u) :
+    Nat.digits 10 (B + B * 10 ^ T₂ + 9 * B * ((10 ^ u - 1) / 9) * 10 ^ T₁)
+      = (Nat.digits 10 B ++ List.replicate (T₂ - (Nat.digits 10 B).length) 0
+          ++ Nat.digits 10 B)
+          ++ List.replicate (T₁ - T₂ - (Nat.digits 10 B).length) 0
+          ++ Nat.digits 10 (9 * B * ((10 ^ u - 1) / 9)) := by
+  set Z := 9 * B * ((10 ^ u - 1) / 9) with hZ
+  have hu1 : 1 ≤ u := by
+    rcases Nat.eq_zero_or_pos (Nat.digits 10 (B-1)).length with h | h <;> omega
+  have hZ0 : Z ≠ 0 := by
+    have h9u := nine_mul_repunit u
+    have h10 : 9 ≤ 10 ^ u - 1 := by
+      have hp : 10 ≤ 10 ^ u := by
+        calc (10:ℕ) = 10 ^ 1 := by norm_num
+          _ ≤ 10 ^ u := Nat.pow_le_pow_right (by norm_num) hu1
+      omega
+    intro h
+    have heq : 9 * B * ((10 ^ u - 1) / 9) = B * (10 ^ u - 1) := by
+      rw [show 9 * B * ((10 ^ u - 1) / 9) = B * (9 * ((10 ^ u - 1) / 9)) from by
+        ring, h9u]
+    rw [hZ, heq] at h
+    rcases Nat.mul_eq_zero.mp h with h' | h'
+    · exact hB h'
+    · omega
+  have hX0 : B + B * 10 ^ T₂ ≠ 0 := by omega
+  have hlenX : (Nat.digits 10 (B + B * 10 ^ T₂)).length
+      = T₂ + (Nat.digits 10 B).length := (border_mul_pow10_len_sum hB hT₂).1
+  rw [show B + B * 10 ^ T₂ + Z * 10 ^ T₁
+        = (B + B * 10 ^ T₂) + Z * 10 ^ T₁ from by ring]
+  rw [digits_add_pow10 hX0 hZ0 (by omega)]
+  rw [border_mul_pow10 hB hT₂]
+  have hcnt : T₁ - (Nat.digits 10 B
+        ++ List.replicate (T₂ - (Nat.digits 10 B).length) 0
+        ++ Nat.digits 10 B).length
+      = T₁ - T₂ - (Nat.digits 10 B).length := by
+    rw [List.length_append, List.length_append, List.length_replicate]
+    omega
+  rw [hcnt]
+
+/-- Spécification du bord : longueur, somme, divisibilité par B,
+    et `e % 10 = B % 10`. -/
+theorem border_filler_spec {B T₂ T₁ u : ℕ} (hB : B ≠ 0)
+    (hT₂ : (Nat.digits 10 B).length ≤ T₂)
+    (hT₁ : T₂ + (Nat.digits 10 B).length ≤ T₁)
+    (hu : (Nat.digits 10 (B - 1)).length < u) :
+    (Nat.digits 10 (B + B * 10 ^ T₂ + 9 * B * ((10 ^ u - 1) / 9) * 10 ^ T₁)).length
+        = T₁ + u + (Nat.digits 10 (B - 1)).length
+    ∧ (Nat.digits 10 (B + B * 10 ^ T₂ + 9 * B * ((10 ^ u - 1) / 9) * 10 ^ T₁)).sum
+        = 2 * (Nat.digits 10 B).sum + 9 * u
+    ∧ B ∣ B + B * 10 ^ T₂ + 9 * B * ((10 ^ u - 1) / 9) * 10 ^ T₁
+    ∧ (0 < T₂ →
+        (B + B * 10 ^ T₂ + 9 * B * ((10 ^ u - 1) / 9) * 10 ^ T₁) % 10
+          = B % 10) := by
+  set Z := 9 * B * ((10 ^ u - 1) / 9) with hZ
+  set e := B + B * 10 ^ T₂ + Z * 10 ^ T₁ with he
+  rw [border_filler hB hT₂ hT₁ hu]
+  have hlenX : (Nat.digits 10 (B + B * 10 ^ T₂)).length
+      = T₂ + (Nat.digits 10 B).length := (border_mul_pow10_len_sum hB hT₂).1
+  have hsumX : (Nat.digits 10 (B + B * 10 ^ T₂)).sum
+      = 2 * (Nat.digits 10 B).sum := (border_mul_pow10_len_sum hB hT₂).2
+  have hlenZ : (Nat.digits 10 Z).length = u + (Nat.digits 10 (B-1)).length :=
+    len_9_mul_repunit hB hu
+  have hsumZ : (Nat.digits 10 Z).sum = 9 * u := sigma_9_mul_repunit hB hu
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rw [List.length_append, List.length_append, List.length_append,
+      List.length_append, List.length_replicate, List.length_replicate, hlenZ]
+    omega
+  · rw [List.sum_append, List.sum_append, List.sum_append, List.sum_append,
+      List.sum_replicate, List.sum_replicate, nsmul_eq_mul, nsmul_eq_mul,
+      mul_zero, mul_zero, add_zero, add_zero, hsumZ]
+    ring
+  · refine ⟨1 + 10 ^ T₂ + 9 * ((10 ^ u - 1) / 9) * 10 ^ T₁, ?_⟩
+    rw [he, hZ]
+    ring
+  · intro hT2
+    -- e % 10 = (B + 10·(...)) % 10 = B % 10
+    have h1 : 1 ≤ T₁ := by omega
+    have hT2' : 10 ^ T₂ = 10 * 10 ^ (T₂ - 1) := by
+      conv_lhs => rw [show T₂ = T₂ - 1 + 1 from by omega]
+      rw [pow_succ]
+      ring
+    have hT1' : 10 ^ T₁ = 10 * 10 ^ (T₁ - 1) := by
+      conv_lhs => rw [show T₁ = T₁ - 1 + 1 from by omega]
+      rw [pow_succ]
+      ring
+    have hw : B * 10 ^ T₂ + Z * 10 ^ T₁
+        = 10 * (B * 10 ^ (T₂ - 1) + Z * 10 ^ (T₁ - 1)) := by
+      rw [hT2', hT1']
+      ring
+    rw [he, show B + B * 10 ^ T₂ + Z * 10 ^ T₁
+        = B + (B * 10 ^ T₂ + Z * 10 ^ T₁) from by ring, hw,
+      Nat.add_mul_mod_self_left]
+
+end A084017
+
+/-! MID gadget : palindrome, bornes, somme 18K + sigma(C). -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- `MID = pairs ++ C ++ rev(pairs)` est palindrome si `C` l'est. -/
+theorem mid_pal {K : ℕ} (e : ℕ → ℕ) (C : List ℕ) (hC : C.Palindrome) :
+    ((List.range (2 * K)).map (pairDigit e) ++ C
+      ++ ((List.range (2 * K)).map (pairDigit e)).reverse).Palindrome := by
+  apply List.Palindrome.of_reverse_eq
+  rw [List.reverse_append, List.reverse_append, List.reverse_reverse,
+    hC.reverse_eq, List.append_assoc]
+
+/-- Éléments de `MID` bornés par 10. -/
+theorem mid_lt10 {K : ℕ} (e : ℕ → ℕ) (he : ∀ k, e k ≤ 9) (C : List ℕ)
+    (hC : ∀ x ∈ C, x < 10) :
+    ∀ x ∈ (List.range (2 * K)).map (pairDigit e) ++ C
+      ++ ((List.range (2 * K)).map (pairDigit e)).reverse, x < 10 := by
+  have hpd : ∀ i, pairDigit e i < 10 := by
+    intro i
+    unfold pairDigit
+    by_cases h : i % 2 = 0
+    · rw [if_pos h]
+      have := he (i / 2)
+      omega
+    · rw [if_neg h]
+      have := he (i / 2)
+      omega
+  intro x hx
+  rcases List.mem_append.mp hx with hx | hx
+  · rcases List.mem_append.mp hx with hx | hx
+    · rw [List.mem_map] at hx
+      obtain ⟨i, _, rfl⟩ := hx
+      exact hpd i
+    · exact hC x hx
+  · rw [List.mem_reverse, List.mem_map] at hx
+    obtain ⟨i, _, rfl⟩ := hx
+    exact hpd i
+
+/-- Somme des `2K` chiffres gadget : `9K`. -/
+theorem pairDigit_sum (e : ℕ → ℕ) (he : ∀ k, e k ≤ 9) (K : ℕ) :
+    ((List.range (2 * K)).map (pairDigit e)).sum = 9 * K := by
+  induction K with
+  | zero => simp
+  | succ k ih =>
+    rw [show 2 * (k + 1) = 2 * k + 2 from by ring, List.range_add,
+      List.map_append, List.sum_append, ih]
+    have hr2 : (List.range 2).map (2 * k + ·) = [2 * k, 2 * k + 1] := by
+      rw [List.range_succ, List.range_succ, List.range_zero]
+      simp [List.map_cons, List.map_nil]
+    rw [hr2]
+    simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
+      add_zero]
+    rw [pairDigit_even, pairDigit_odd]
+    have := he k
+    omega
+
+/-- Somme de `MID` : `18K + σ(C)`. -/
+theorem mid_sum {K : ℕ} (e : ℕ → ℕ) (he : ∀ k, e k ≤ 9) (C : List ℕ) :
+    ((List.range (2 * K)).map (pairDigit e) ++ C
+      ++ ((List.range (2 * K)).map (pairDigit e)).reverse).sum
+      = 18 * K + C.sum := by
+  rw [List.sum_append, List.sum_append, List.sum_reverse,
+    pairDigit_sum e he]
+  ring
+
+end A084017
+
+/-! Pont twt = 81 * repunit dans ZMod q. -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Pont poids : `Σ e_k·twt_k = 81·Σ e_k·a'_k` dans `ZMod q`
+    (`twt = palW − palW`, `a'_k = 10^{2k}·R_{D_k}` repunit). -/
+theorem sum_twt_81 {q K g : ℕ} (e : ℕ → ℕ) :
+    ∑ k ∈ Finset.range K, (e k : ZMod q) * twt q (4 * K + g) k
+      = (81 : ZMod q)
+          * ∑ k ∈ Finset.range K, (e k : ZMod q)
+              * (((10 ^ (2 * k))
+                  * ((10 ^ (4 * K + g - 2 - 4 * k) - 1) / 9) : ℕ) : ZMod q) := by
+  rw [Finset.mul_sum]
+  refine Finset.sum_congr rfl fun k hk => ?_
+  rw [Finset.mem_range] at hk
+  set D := 4 * K + g - 2 - 4 * k with hD
+  have hf := palW_pair_factor (m := q) (L := 4 * K + g) (k := k)
+    (by omega : 4 * k + 2 ≤ 4 * K + g)
+  have htwt : twt q (4 * K + g) k
+      = (9 : ZMod q) * (10 : ZMod q) ^ (2 * k)
+          * ((10 : ZMod q) ^ D - 1) := by
+    unfold twt
+    rw [hf]
+  rw [htwt]
+  have h9 : (9 : ZMod q) * (((10 ^ D - 1) / 9 : ℕ) : ZMod q)
+      = (10 : ZMod q) ^ D - 1 := by
+    conv_lhs => rw [← Nat.cast_ofNat]
+    rw [← Nat.cast_mul, nine_mul_repunit,
+      Nat.cast_sub (Nat.one_le_pow _ _ (by norm_num : (0:ℕ) < 10))]
+    push_cast
+    ring
+  have h81a : (81 : ZMod q)
+        * (((10 ^ (2 * k)) * ((10 ^ D - 1) / 9) : ℕ) : ZMod q)
+      = 9 * (10 : ZMod q) ^ (2 * k)
+          * (9 * (((10 ^ D - 1) / 9 : ℕ) : ZMod q)) := by
+    have hnat : (81 : ℕ) * ((10 ^ (2 * k)) * ((10 ^ D - 1) / 9))
+        = 9 * (10 ^ (2 * k)) * (9 * ((10 ^ D - 1) / 9)) := by ring
+    conv_lhs => rw [← Nat.cast_ofNat, ← Nat.cast_mul, hnat]
+    push_cast
+    ring
+  rw [show (81 : ZMod q) * ((e k : ZMod q)
+        * (((10 ^ (2 * k)) * ((10 ^ D - 1) / 9) : ℕ) : ZMod q))
+      = (e k : ZMod q) * ((81 : ZMod q)
+          * (((10 ^ (2 * k)) * ((10 ^ D - 1) / 9) : ℕ) : ZMod q)) from by ring]
+  rw [h81a, h9]
+
+end A084017
+
+/-! Solveur parametrique (kappa, u_j). -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Solveur `(κ, u_j)` : `κmin ≤ κ ≤ Q`, `u_j < Q`,
+    `2(κ + u_j) ≡ ρσ [MOD Q]` — pour `ρσ` pair. -/
+theorem solver_kuj {Q ρσ κmin : ℕ} (hQ : 1 ≤ Q) (hκ : κmin ≤ Q)
+    (hρ : 2 ∣ ρσ) :
+    ∃ κ uj : ℕ, κmin ≤ κ ∧ κ ≤ Q ∧ uj < Q
+      ∧ 2 * (κ + uj) ≡ ρσ [MOD Q] := by
+  obtain ⟨s, hs⟩ := hρ
+  refine ⟨κmin, ((ρσ + 2 * Q - 2 * κmin) / 2) % Q, le_refl _, hκ,
+    Nat.mod_lt _ (by omega), ?_⟩
+  have h2x : 2 ∣ ρσ + 2 * Q - 2 * κmin := by
+    rw [hs]
+    omega
+  have hev : 2 * ((ρσ + 2 * Q - 2 * κmin) / 2)
+      = ρσ + 2 * Q - 2 * κmin := by
+    obtain ⟨w, hw⟩ := h2x
+    rw [hw]
+    have : (2 * w) / 2 = w := by omega
+    rw [this]
+  have hmod : 2 * (((ρσ + 2 * Q - 2 * κmin) / 2) % Q)
+      ≡ ρσ + 2 * Q - 2 * κmin [MOD Q] := by
+    calc 2 * (((ρσ + 2 * Q - 2 * κmin) / 2) % Q)
+        ≡ 2 * ((ρσ + 2 * Q - 2 * κmin) / 2) [MOD Q] := by
+          have h := Nat.mod_modEq ((ρσ + 2 * Q - 2 * κmin) / 2) Q
+          have h2 := h.mul_left 2
+          exact h2
+      _ = ρσ + 2 * Q - 2 * κmin := hev
+  have h2 : 2 * (κmin + ((ρσ + 2 * Q - 2 * κmin) / 2) % Q)
+      ≡ ρσ + 2 * Q [MOD Q] := by
+    rw [Nat.mul_add]
+    have h := (Nat.ModEq.refl (2 * κmin)).add hmod
+    have heq : 2 * κmin + (ρσ + 2 * Q - 2 * κmin) = ρσ + 2 * Q := by
+      omega
+    rwa [heq] at h
+  have h3 : ρσ + 2 * Q ≡ ρσ [MOD Q] := by
+    have h0 : 2 * Q ≡ 0 [MOD Q] :=
+      Nat.modEq_zero_iff_dvd.mpr ⟨2, by ring⟩
+    simpa using (Nat.ModEq.refl ρσ).add h0
+  exact h2.trans h3
+
+end A084017
+
+/-! Coeur assemblage : extraction twt a cible CRT (tout v). -/
+namespace A084017
+open Finset List Nat BigOperators Pointwise
+
+/-- Coeur d'assemblage : extraction `twt` à cible CRT —
+    `Σ e_k·twt_k = T` dans `ZMod (m·3^v)` avec `T ↦ 81·t` mod `m`
+    et `T ↦ 0` mod `3^v` (v ≥ 4, `m ⊥ 30`). -/
+theorem extract3_target {m v K g : ℕ} [NeZero m]
+    (hm3 : m.Coprime 3) (hm10 : m.Coprime 10)
+    (hg3 : 3 ≤ g) (hgodd : Odd g)
+    (hK : m * 3 ^ (v - 4) ≤ 1 + 9 * (K / 2)) (t : ZMod m) :
+    ∃ e : ℕ → ℕ, (∀ k, e k ≤ 9)
+      ∧ ∃ T : ZMod (m * 3 ^ v),
+          (∑ k ∈ Finset.range K, (e k : ZMod (m * 3 ^ v))
+              * twt (m * 3 ^ v) (4 * K + g) k) = T
+        ∧ ((ZMod.castHom (Nat.dvd_mul_right m (3 ^ v)) (ZMod m)) T
+            = 81 * t)
+        ∧ ((ZMod.castHom (Nat.dvd_mul_left (3 ^ v) m) (ZMod (3 ^ v))) T
+            = 0) := by
+  set M := m * 3 ^ (v - 4) with hM
+  have hmpos : 0 < m := NeZero.pos m
+  have h3 : (0:ℕ) < 3 ^ (v - 4) := pow_pos (by norm_num) _
+  haveI : NeZero (3 ^ (v - 4)) := ⟨pow_ne_zero _ (by norm_num)⟩
+  haveI : NeZero M := ⟨by
+    rw [hM]
+    exact mul_ne_zero (NeZero.ne m) (pow_ne_zero _ (by norm_num))⟩
+  have hM10 : M.Coprime 10 := Nat.coprime_mul_iff_left.mpr
+    ⟨hm10, Nat.Coprime.pow_left _ (by norm_num)⟩
+  have hcop : m.Coprime (3 ^ (v - 4)) := hm3.pow_right _
+  set iv : ℕ := ((m : ZMod (3 ^ (v - 4)))⁻¹).val with hiv
+  set s : ℕ := (iv * (3 ^ (v - 4) - t.val % 3 ^ (v - 4)))
+      % 3 ^ (v - 4) with hs
+  set trep : ℕ := t.val + m * s with htrep
+  have hunit : IsUnit (↑m : ZMod (3 ^ (v - 4))) :=
+    (ZMod.isUnit_iff_coprime m (3 ^ (v - 4))).mpr hcop
+  have htrep_m : (↑trep : ZMod m) = t := by
+    rw [htrep, Nat.cast_add, Nat.cast_mul]
+    have h0 : (m : ZMod m) = 0 := ZMod.natCast_self m
+    rw [h0, zero_mul, add_zero, ZMod.natCast_val, ZMod.cast_id]
+  have htrep_3 : 3 ^ (v - 4) ∣ trep := by
+    have hstep : (↑trep : ZMod (3 ^ (v - 4))) = 0 := by
+      rw [htrep, Nat.cast_add, Nat.cast_mul]
+      have hs_cast : (↑s : ZMod (3 ^ (v - 4)))
+          = ↑(iv * (3 ^ (v - 4) - t.val % 3 ^ (v - 4))) := by
+        rw [hs, ZMod.natCast_eq_natCast_iff]
+        exact Nat.mod_modEq _ _
+      rw [hs_cast, Nat.cast_mul]
+      have hiv_cast : (↑iv : ZMod (3 ^ (v - 4))) = (↑m)⁻¹ := by
+        rw [hiv, ZMod.natCast_val, ZMod.cast_id]
+      rw [hiv_cast]
+      have hsub : (↑(3 ^ (v - 4) - t.val % 3 ^ (v - 4))
+          : ZMod (3 ^ (v - 4))) = -(↑(t.val % 3 ^ (v - 4))) := by
+        rw [Nat.cast_sub ((Nat.mod_lt _ h3).le)]
+        have hN : ((3 ^ (v - 4) : ℕ) : ZMod (3 ^ (v - 4))) = 0 :=
+          ZMod.natCast_self _
+        rw [hN, zero_sub]
+      rw [hsub]
+      have hr : (↑(t.val % 3 ^ (v - 4)) : ZMod (3 ^ (v - 4)))
+          = ↑(t.val) := by
+        rw [ZMod.natCast_eq_natCast_iff]
+        exact Nat.mod_modEq _ _
+      rw [hr]
+      have h1 : (↑m : ZMod (3 ^ (v - 4))) * (↑m)⁻¹ = 1 :=
+        ZMod.mul_inv_of_unit _ hunit
+      rw [← mul_assoc, h1, one_mul, add_neg_cancel]
+    rw [← CharP.cast_eq_zero_iff (ZMod (3 ^ (v - 4))) (3 ^ (v - 4)) trep]
+    exact hstep
+  obtain ⟨e, he, hsum⟩ :=
+    gadget_extract3 hM10 hg3 hgodd hK (↑trep : ZMod M)
+  refine ⟨e, he, (((81 * trep : ℕ) : ZMod (m * 3 ^ v))), ?_, ?_, ?_⟩
+  · rw [sum_twt_81]
+    set S := ∑ k ∈ Finset.range K,
+        e k * (10 ^ (2 * k)
+            * ((10 ^ (4 * K + g - 2 - 4 * k) - 1) / 9)) with hS
+    have hSM : (↑S : ZMod M) = (↑trep : ZMod M) := by
+      rw [hS, Nat.cast_sum, ← hsum]
+      apply Finset.sum_congr rfl
+      intro k _
+      rw [Nat.cast_mul]
+    have hSval : S ≡ trep [MOD M] := by
+      have hv1 : (↑S : ZMod M).val = (↑trep : ZMod M).val :=
+        congrArg ZMod.val hSM
+      rw [ZMod.val_natCast, ZMod.val_natCast] at hv1
+      rw [Nat.ModEq, hv1]
+    have h81M : 81 * S ≡ 81 * trep [MOD 81 * M] :=
+      Nat.ModEq.mul_left' 81 hSval
+    have h81M' : m * 3 ^ v ∣ 81 * M := by
+      rw [hM, show (81 : ℕ) = 3 ^ 4 from by norm_num]
+      have hA : 3 ^ 4 * (m * 3 ^ (v - 4)) = m * (3 ^ 4 * 3 ^ (v - 4)) := by
+        ring
+      rw [hA, ← pow_add]
+      exact Nat.mul_dvd_mul_left m (pow_dvd_pow 3 (by omega))
+    have h81Mv : 81 * S ≡ 81 * trep [MOD m * 3 ^ v] := by
+      rw [Nat.ModEq] at h81M ⊢
+      rw [← Nat.mod_mod_of_dvd _ h81M', h81M,
+        Nat.mod_mod_of_dvd _ h81M']
+    have hcast : ((81 * S : ℕ) : ZMod (m * 3 ^ v))
+        = ((81 * trep : ℕ) : ZMod (m * 3 ^ v)) :=
+      (ZMod.natCast_eq_natCast_iff _ _ _).mpr h81Mv
+    rw [← hcast, Nat.cast_mul, Nat.cast_ofNat, Nat.cast_sum,
+      Finset.mul_sum, Finset.mul_sum]
+    apply Finset.sum_congr rfl
+    intro k _
+    push_cast
+    ring
+  · have hc := map_natCast (ZMod.castHom (Nat.dvd_mul_right m (3 ^ v))
+        (ZMod m)) (81 * trep)
+    rw [hc, Nat.cast_mul, Nat.cast_ofNat, htrep_m]
+  · have hc := map_natCast (ZMod.castHom (Nat.dvd_mul_left (3 ^ v) m)
+        (ZMod (3 ^ v))) (81 * trep)
+    rw [hc]
+    rw [CharP.cast_eq_zero_iff (ZMod (3 ^ v)) (3 ^ v) (81 * trep)]
+    obtain ⟨w, hw⟩ := htrep_3
+    rw [hw, show (81 : ℕ) = 3 ^ 4 from by norm_num]
+    have hA : 3 ^ 4 * (3 ^ (v - 4) * w) = 3 ^ (4 + (v - 4)) * w := by
+      rw [← mul_assoc, ← pow_add]
+    rw [hA]
+    exact dvd_mul_of_dvd_left (pow_dvd_pow 3 (by omega)) _
+
+end A084017
+
+/-! Cast ofDigits Nat -> ZMod. -/
+namespace A084017
+
+theorem cast_ofDigits {q : ℕ} (L : List ℕ) :
+    ((Nat.ofDigits 10 L : ℕ) : ZMod q) = Nat.ofDigits (10 : ZMod q) L := by
+  induction L with
+  | nil => simp [Nat.ofDigits]
+  | cons d t ih => simp [Nat.ofDigits, ih]
+
+end A084017
