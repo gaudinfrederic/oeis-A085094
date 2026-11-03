@@ -1,0 +1,38 @@
+{
+  "title": "A085094 — strict palindrome P with n | P+1, for all n (Lean 4)",
+  "description": "theorem A085094: for every n != 0 there exists a nonzero P whose decimal digits form a strict List.Palindrome with n | P+1. Proved for all n. Trust base: standard axioms only; zero native_decide.",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Gaudin, Frederic"
+    }
+  ],
+  "license": {
+    "id": "Apache-2.0"
+  },
+  "keywords": [
+    "OEIS",
+    "digit sum",
+    "Lean 4",
+    "mathlib",
+    "formal proof",
+    "theorem prover",
+    "A085094",
+    "palindrome",
+    "strict"
+  ],
+  "version": "1.0.0",
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.23879088",
+      "relation": "references",
+      "resource_type": "publication-article",
+      "scheme": "doi"
+    }
+  ],
+  "custom": {
+    "code:theoremStatus": "theorem-unconditional",
+    "code:leanToolchain": "leanprover/lean4:v4.35.0",
+    "code:mathlibVersion": "v4.35.0"
+  }
+}
