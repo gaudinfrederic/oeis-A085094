@@ -1,5 +1,6 @@
 import Mathlib
 import CornerTable
+import A077754Cert
 
 open scoped Pointwise
 
@@ -341,20 +342,12 @@ def Xgrid : List ℤ :=
 
 /-- |X| = 60 et listes d unites {2,5}-smooth / {2,3,5}-smooth.
     [T-Lean] par calcul natif. -/
-theorem Xgrid_card : Xgrid.length = 60 := by native_decide
+theorem Xgrid_card : Xgrid.length = 60 := by decide
 
 /-- les elements {2,5}-smooth de X : 16 signes. -/
-def Xsmooth25 : List ℤ :=
-  [1, 2, 4, 8, 10, 20, 32, 40, -1, -2, -4, -8, -10, -20, -32, -40]
+theorem Xsmooth25_sub : ∀ x ∈ Xsmooth25, x ∈ Xgrid := by decide
 
-theorem Xsmooth25_sub : ∀ x ∈ Xsmooth25, x ∈ Xgrid := by native_decide
-
-/-- les elements {2,3,5}-smooth de X : 28 signes. -/
-def Xsmooth235 : List ℤ :=
-  [1, 2, 3, 4, 8, 9, 10, 12, 18, 20, 24, 30, 32, 40,
-   -1, -2, -3, -4, -8, -9, -10, -12, -18, -20, -24, -30, -32, -40]
-
-theorem Xsmooth235_sub : ∀ x ∈ Xsmooth235, x ∈ Xgrid := by native_decide
+theorem Xsmooth235_sub : ∀ x ∈ Xsmooth235, x ∈ Xgrid := by decide
 
 /-- Concatenation sans retenue : N = B + 10^d.H avec
     d = nb de chiffres de B (B /= 0) se decompose en
@@ -1327,23 +1320,224 @@ theorem gcd9mem (m : ℕ) :
   rw [hke]
   interval_cases k <;> simp
 
-/-- Couverture machine : pour M <= 184 coprime a 10 (les cas
-    realisables : g in {1,3,9} avec 3 non|M quand g < 9), la
-    somme de 6 etages couvre tout ZMod M. -/
-theorem stage_cover_small_aux :
-    ((List.range' 1 184).all fun M =>
-      (!(Nat.gcd M 10 == 1)) ||
-      ((((!(Nat.gcd M 3 == 1)) ||
-          (decide ((∑ j ∈ Finset.range 6,
-              stageSet M (j+1) 1 Xsmooth235 : Finset (ZMod M)).card
-            = M)) &&
-          (decide ((∑ j ∈ Finset.range 6,
-              stageSet M (j+1) 3 Xsmooth25 : Finset (ZMod M)).card
-            = M))) &&
-        (decide ((∑ j ∈ Finset.range 6,
-            stageSet M (j+1) 9 Xsmooth25 : Finset (ZMod M)).card
-          = M))))) = true := by
-  native_decide
+/-! ## Pont bitmap -> Finset (certificats dans `A077754Cert`)
+
+    `coverB_to_finset` relie le certificat bitmap `checkCoverB`
+    (module `A077754Cert`, compile en processus frais pour le
+    plafond memoire kernel) a l'enonce `Finset` utilise par
+    `stage_cover_small{,'}`. -/
+
+/-- `xres` = `emod` positif : `x % M ∈ [0, M)` donc `(x % M + M) % M = x % M`. -/
+theorem xres_eq (M : Nat) (_hM : 0 < M) (x : Int) :
+    xres M x = (x % (M : Int)).toNat := by
+  unfold xres
+  rw [Int.add_emod_right, Int.emod_emod]
+
+/-- `xres` vu dans `ZMod M` coincide avec le cast `Int`. -/
+theorem xres_cast (M : Nat) (hM : 0 < M) (x : Int) :
+    ((xres M x : Nat) : ZMod M) = (x : ZMod M) := by
+  have hnn : 0 ≤ x % (M : Int) :=
+    Int.emod_nonneg _ (by exact_mod_cast (Nat.ne_of_gt hM))
+  rw [xres_eq M hM x]
+  rw [← Int.cast_natCast (R := ZMod M), Int.toNat_of_nonneg hnn]
+  rw [ZMod.intCast_eq_intCast_iff]
+  exact Int.mod_modEq _ _
+
+/-- Forme deployee de `stageRes` (elimination du `let`). -/
+theorem stageRes_def (M i g : Nat) (xs : List Int) :
+    stageRes M i g xs
+      = (xs.map fun x =>
+          ((((9 / g) * 10 ^ (3 * i)) % M) * xres M x) % M).eraseDups :=
+  rfl
+
+/-- `stageRes` vue dans `ZMod M` = le morceau non nul de `stageSet`. -/
+theorem stageRes_image (M i g : Nat) (hM : 0 < M) (xs : List Int) :
+    ((stageRes M i g xs).toFinset.image fun (s : ℕ) => (s : ZMod M))
+      = xs.toFinset.image (fun (x : Int) =>
+          ((9 / g : Nat) * 10 ^ (3 * i) : ZMod M) * (x : ZMod M)) := by
+  rw [stageRes_def]
+  ext z
+  simp only [Finset.mem_image, List.mem_toFinset, List.mem_eraseDups,
+      List.mem_map]
+  constructor
+  · rintro ⟨a, ⟨x, hxs, rfl⟩, hza⟩
+    refine ⟨x, hxs, ?_⟩
+    rw [← hza, ZMod.natCast_mod, Nat.cast_mul, ZMod.natCast_mod,
+        xres_cast M hM x, Nat.cast_mul, Nat.cast_pow,
+        Nat.cast_ofNat]
+  · rintro ⟨x, hxs, hcx⟩
+    refine ⟨_, ⟨x, hxs, rfl⟩, ?_⟩
+    rw [← hcx, ZMod.natCast_mod, Nat.cast_mul, ZMod.natCast_mod,
+        xres_cast M hM x, Nat.cast_mul, Nat.cast_pow,
+        Nat.cast_ofNat]
+
+/-- `setBits` = residus `< M` dont le bit est `1`. -/
+theorem mem_setBits (M : Nat) (bits r : Nat) :
+    r ∈ setBits M bits ↔ r < M ∧ bits.testBit r = true := by
+  rw [setBits, List.mem_filter, List.mem_range]
+
+/-- Poser le bit `k < M` : `setBits (a ||| 2^k) = setBits a ∪ {k}`. -/
+theorem setBits_or_bit (M : Nat) (a k : Nat)
+    (hk : k < M) :
+    (setBits M (a ||| (1 <<< k))).toFinset
+      = (setBits M a).toFinset ∪ {k} := by
+  ext r
+  rw [List.mem_toFinset, mem_setBits, Nat.testBit_or,
+      Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow,
+      Finset.mem_union, List.mem_toFinset, mem_setBits,
+      Finset.mem_singleton, Bool.or_eq_true_iff, decide_eq_true_eq]
+  constructor
+  · rintro ⟨hr, hb⟩
+    rcases hb with hb | hkr
+    · exact Or.inl ⟨hr, hb⟩
+    · exact Or.inr hkr.symm
+  · rintro (⟨hr, hb⟩ | rfl)
+    · exact ⟨hr, Or.inl hb⟩
+    · exact ⟨hk, Or.inr rfl⟩
+
+/-- Le `foldl` OR-bit de `step` ajoute `{(r + s) % M | s ∈ l}` aux bits. -/
+theorem inner_or (M : Nat) (hM : 0 < M) (r : Nat) :
+    ∀ (l : List Nat) (a : Nat),
+      (setBits M (l.foldl
+          (fun a2 s => a2 ||| (1 <<< ((r + s) % M))) a)).toFinset
+        = (setBits M a).toFinset
+          ∪ l.toFinset.image (fun s => (r + s) % M) := by
+  intro l a
+  induction l generalizing a with
+  | nil =>
+    have h0 : (([] : List Nat).toFinset) = (∅ : Finset Nat) := rfl
+    rw [List.foldl_nil, h0, Finset.image_empty, Finset.union_empty]
+  | cons s l ih =>
+    have hcons : (s :: l).toFinset = insert s l.toFinset := by
+      ext x; simp
+    rw [List.foldl_cons, ih (a ||| (1 <<< ((r + s) % M))),
+        setBits_or_bit M a ((r + s) % M) (Nat.mod_lt _ hM),
+        hcons, Finset.image_insert, Finset.insert_eq,
+        Finset.union_assoc]
+
+/-- `step` au niveau `Finset Nat` = somme de Minkowski `mod M`. -/
+theorem step_aux (M : Nat) (hM : 0 < M) (stage : List Nat) :
+    ∀ (l : List Nat) (a : Nat),
+      (setBits M (l.foldl
+          (fun a r => stage.foldl
+            (fun a2 s => a2 ||| (1 <<< ((r + s) % M))) a) a)).toFinset
+        = (setBits M a).toFinset ∪
+          Finset.image₂ (fun r s => (r + s) % M) l.toFinset
+            stage.toFinset := by
+  intro l a
+  induction l generalizing a with
+  | nil =>
+    have h0 : (([] : List Nat).toFinset) = (∅ : Finset Nat) := rfl
+    rw [List.foldl_nil, h0, Finset.image₂_empty_left,
+        Finset.union_empty]
+  | cons r l ih =>
+    have hcons : (r :: l).toFinset = insert r l.toFinset := by
+      ext x; simp
+    rw [List.foldl_cons,
+        ih (stage.foldl (fun a2 s => a2 ||| (1 <<< ((r+s)%M))) a),
+        inner_or M hM r stage a, hcons, Finset.image₂_insert_left,
+        Finset.union_assoc]
+
+/-- Version `step` de `step_aux`. -/
+theorem step_bits (M : Nat) (hM : 0 < M) (acc : Nat)
+    (stage : List Nat) :
+    (setBits M (step M acc stage)).toFinset
+      = (setBits M acc).toFinset ∪
+        Finset.image₂ (fun r s => (r + s) % M) (setBits M acc).toFinset
+          stage.toFinset := by
+  exact step_aux M hM stage (setBits M acc) acc
+
+/-- `image₂ ((r+s) % M)` puis `Nat.cast` = somme pointwise des images. -/
+theorem image₂_cast (M : Nat) (A B : Finset Nat) :
+    (Finset.image₂ (fun r s => (r + s) % M) A B).image
+        (fun (r : ℕ) => (r : ZMod M))
+      = (A.image fun (r : ℕ) => (r : ZMod M))
+        + (B.image fun (s : ℕ) => (s : ZMod M)) := by
+  ext z
+  simp only [Finset.mem_image, Finset.mem_image₂, Finset.mem_add]
+  constructor
+  · rintro ⟨p, ⟨a, ha, b, hb, rfl⟩, hza⟩
+    refine ⟨(a : ZMod M), ⟨a, ha, rfl⟩, (b : ZMod M), ⟨b, hb, rfl⟩,
+      ?_⟩
+    rw [← hza, ZMod.natCast_mod, Nat.cast_add]
+  · rintro ⟨u, ⟨a, ha, rfl⟩, v, ⟨b, hb, rfl⟩, huv⟩
+    refine ⟨(a + b) % M, ⟨a, ha, b, hb, rfl⟩, ?_⟩
+    rw [← huv, ZMod.natCast_mod, Nat.cast_add]
+
+/-- `step` = somme de Minkowski `ZMod` avec `stage ∪ {0}`. -/
+theorem step_image (M : Nat) (hM : 0 < M) (acc : Nat)
+    (stage : List Nat) :
+    ((setBits M (step M acc stage)).toFinset.image
+        fun (r : ℕ) => (r : ZMod M))
+      = ((setBits M acc).toFinset.image fun (r : ℕ) => (r : ZMod M))
+        + ({0} ∪ stage.toFinset.image fun (s : ℕ) => (s : ZMod M)) := by
+  rw [step_bits M hM acc stage, Finset.image_union,
+      image₂_cast M, Finset.add_union, Finset.singleton_zero,
+      add_zero]
+
+/-- Un etage de plus dans `coverBits` = `step` avec `stageRes (j+1)`. -/
+theorem coverBits_succ (M g : Nat) (xs : List Int) (j : Nat) :
+    coverBits M g xs (j + 1)
+      = step M (coverBits M g xs j) (stageRes M (j + 1) g xs) := by
+  unfold coverBits
+  rw [List.range_succ, List.foldl_append]
+  simp
+
+/-- `coverBits jmax` = bits de la somme de Minkowski des `jmax` etages. -/
+theorem coverBits_image (M g : Nat) (hM : 0 < M) (xs : List Int) :
+    ∀ jmax : Nat,
+      ((setBits M (coverBits M g xs jmax)).toFinset.image
+          fun (r : ℕ) => (r : ZMod M))
+        = ∑ j ∈ Finset.range jmax, stageSet M (j+1) g xs := by
+  intro jmax
+  induction jmax with
+  | zero =>
+    have h0 : coverBits M g xs 0 = 1 := rfl
+    have h1 : (setBits M 1).toFinset = {0} := by
+      ext r
+      rw [List.mem_toFinset, mem_setBits, Finset.mem_singleton]
+      constructor
+      · rintro ⟨-, hb⟩
+        exact Nat.testBit_one_eq_true_iff_self_eq_zero.mp hb
+      · intro hr
+        rw [hr]
+        exact ⟨hM, Nat.testBit_one_eq_true_iff_self_eq_zero.mpr rfl⟩
+    rw [h0, h1, Finset.image_singleton, Nat.cast_zero,
+        Finset.range_zero, Finset.sum_empty, Finset.singleton_zero]
+  | succ jmax ih =>
+    rw [coverBits_succ, step_image M hM,
+        stageRes_image M (jmax+1) g hM xs, ih]
+    exact (Finset.sum_range_succ
+      (fun j => stageSet M (j+1) g xs) jmax).symm
+
+/-- PONT : `checkCoverB M g xs k = true` ⟹ la somme de Minkowski des
+    `k` etages couvre `ZMod M` entier (forme `card = M`). -/
+theorem coverB_to_finset (M g : Nat) [NeZero M] (xs : List Int) (k : Nat)
+    (h : checkCoverB M g xs k = true) :
+    ((Finset.range k).sum
+      (fun j => stageSet M (j+1) g xs) : Finset (ZMod M)).card = M := by
+  have hM : 0 < M := NeZero.pos M
+  unfold checkCoverB at h
+  have hcov : coverBits M g xs k = (1 <<< M) - 1 := beq_iff_eq.mp h
+  rw [Nat.shiftLeft_eq, one_mul] at hcov
+  have hsb : (setBits M (2 ^ M - 1)).toFinset = Finset.range M := by
+    ext r
+    rw [List.mem_toFinset, mem_setBits, Finset.mem_range,
+        Nat.testBit_two_pow_sub_one]
+    simp
+  have huniv : ((setBits M (coverBits M g xs k)).toFinset.image
+      fun (r : ℕ) => (r : ZMod M)) = Finset.univ := by
+    rw [hcov, hsb]
+    apply Finset.eq_univ_of_forall
+    intro z
+    rw [Finset.mem_image]
+    refine ⟨z.val, Finset.mem_range.mpr (ZMod.val_lt z), ?_⟩
+    have hv : ((z.val : ZMod M)).val = z.val :=
+      ZMod.val_cast_of_lt (ZMod.val_lt z)
+    exact ZMod.val_injective M hv
+  have hsum := coverBits_image M g hM xs k
+  rw [hsum] at huniv
+  rw [huniv, Finset.card_univ, ZMod.card]
 
 theorem stage_cover_small (M g : ℕ) [NeZero M] (hM : M ≤ 184)
     (hcop : Nat.Coprime M 10)
@@ -1376,7 +1570,7 @@ theorem stage_cover_small (M g : ℕ) [NeZero M] (hM : M ≤ 184)
     simp only [beq_self_eq_true, Bool.not_true, Bool.false_or,
       Bool.and_eq_true] at h13
     rw [if_pos rfl]
-    exact huniv _ (of_decide_eq_true h13.1)
+    exact huniv _ (coverB_to_finset M 1 Xsmooth235 6 h13.1)
   · have h3b : Nat.gcd M 3 = 1 :=
       Nat.Coprime.gcd_eq_one (Nat.coprime_comm.mp
         (Nat.prime_three.coprime_iff_not_dvd.mpr
@@ -1385,10 +1579,11 @@ theorem stage_cover_small (M g : ℕ) [NeZero M] (hM : M ≤ 184)
     simp only [beq_self_eq_true, Bool.not_true, Bool.false_or,
       Bool.and_eq_true] at h13
     rw [if_neg (by norm_num)]
-    exact huniv _ (of_decide_eq_true h13.2)
+    exact huniv _ (coverB_to_finset M 3 Xsmooth25 6 h13.2)
   · rw [if_neg (by norm_num)]
-    exact huniv _ (of_decide_eq_true h9)
+    exact huniv _ (coverB_to_finset M 9 Xsmooth25 6 h9)
 
+set_option maxRecDepth 40000 in
 /-- Pour les trois moduls du coin (11, 19, 23) : 2 etages de
     Xsmooth235 couvrent ZMod m entier (g = 1 dans ces cas). -/
 theorem stage_cover_2 (M g : ℕ) [NeZero M] (xs : List ℤ)
@@ -1400,23 +1595,7 @@ theorem stage_cover_2 (M g : ℕ) [NeZero M] (xs : List ℤ)
   rcases hM with rfl | rfl | rfl <;>
     apply Finset.eq_univ_of_card <;>
     rw [ZMod.card] <;>
-    native_decide
-
-/-- Certificat machine : pour tout m <= 1656 premier a 10 hors
-    {11,19,23} avec M = m / gcd(9,m) <= 184, il existe
-    k <= m/27+1 etages couvrant ZMod M. -/
-theorem stage_cover_small_aux' :
-    ((List.range' 1 1656).all fun m =>
-      (!(Nat.gcd m 10 == 1)) ||
-      (decide (m = 11)) || (decide (m = 19)) || (decide (m = 23)) ||
-      (!(decide (m / Nat.gcd 9 m ≤ 184))) ||
-      ((List.range (m / 27 + 2)).any fun k =>
-        decide ((∑ j ∈ Finset.range k,
-            stageSet (m / Nat.gcd 9 m) (j + 1) (Nat.gcd 9 m)
-              (if Nat.gcd 9 m = 1 then Xsmooth235 else Xsmooth25) :
-            Finset (ZMod (m / Nat.gcd 9 m))).card =
-          m / Nat.gcd 9 m))) = true := by
-  native_decide
+    decide
 
 /-- Extraction du certificat : couverture en k <= m/27+1 etages
     pour M <= 184 hors coin. -/
@@ -1463,8 +1642,12 @@ theorem stage_cover_small' (m : ℕ) (hm : Nat.Coprime m 10)
     Bool.false_or, Bool.or_self, Bool.or_false] at hall
   obtain ⟨k, hkmem, hk⟩ := List.any_eq_true.mp hall
   have hkl := List.mem_range.mp hkmem
-  exact ⟨k, by omega, of_decide_eq_true hk⟩
+  exact ⟨k, by omega,
+    coverB_to_finset (m / Nat.gcd 9 m) (Nat.gcd 9 m)
+      (if Nat.gcd 9 m = 1 then Xsmooth235 else Xsmooth25) k hk⟩
 
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 4000000 in
 /-- Certificat de la table witCorner : pour m in {11,19,23},
     L in {7,8,9}, r0 <= 4 et tout residu tv, une entree
     (m, L, tv, code) donne u_e = code/10^e%10 <= 8 de somme
@@ -1482,7 +1665,7 @@ theorem witCorner_all :
                 e.2.2.2 / 10 ^ i % 10).sum == 4 * L + r0) &&
               (fibre (fun i => e.2.2.2 / 10 ^ i % 10) L % m == tv)
             ) = true := by
-  native_decide
+  decide
 
 /-- Extraction d'un temoin de la table pour le coin. -/
 theorem corner_witness (m : ℕ) [NeZero m] (t : ZMod m)
@@ -1613,9 +1796,9 @@ theorem residue_reach (m : ℕ) (hm : Nat.Coprime m 10)
       exact xunit25 M hcopM x hx
   have hnd : xs.Nodup := by
     rcases hg9 with h | h | h
-    · rw [if_pos h] at hxsdef; rw [hxsdef]; native_decide
-    · rw [if_neg (by omega)] at hxsdef; rw [hxsdef]; native_decide
-    · rw [if_neg (by omega)] at hxsdef; rw [hxsdef]; native_decide
+    · rw [if_pos h] at hxsdef; rw [hxsdef]; decide
+    · rw [if_neg (by omega)] at hxsdef; rw [hxsdef]; decide
+    · rw [if_neg (by omega)] at hxsdef; rw [hxsdef]; decide
   have hxb : ∀ x ∈ xs, |x| ≤ 92 := by
     intro x hx
     rcases hg9 with h | h | h
@@ -1637,13 +1820,13 @@ theorem residue_reach (m : ℕ) (hm : Nat.Coprime m 10)
   have hsq : M ≤ (m / 27 + 1) * xs.length + 1 := by
     rcases hg9 with h | h | h
     · have hlen : xs.length = 28 := by
-        rw [if_pos h] at hxsdef; rw [hxsdef]; native_decide
+        rw [if_pos h] at hxsdef; rw [hxsdef]; decide
       rw [hlen, hMdef, h, Nat.div_one]; omega
     · have hlen : xs.length = 16 := by
-        rw [if_neg (by omega)] at hxsdef; rw [hxsdef]; native_decide
+        rw [if_neg (by omega)] at hxsdef; rw [hxsdef]; decide
       rw [hlen, hMdef, h]; omega
     · have hlen : xs.length = 16 := by
-        rw [if_neg (by omega)] at hxsdef; rw [hxsdef]; native_decide
+        rw [if_neg (by omega)] at hxsdef; rw [hxsdef]; decide
       rw [hlen, hMdef, h]; omega
   have hunit : IsUnit ((9 / g : ℕ) : ZMod M) :=
     (ZMod.isUnit_iff_coprime _ _).mpr (scalar_unit m)
@@ -1782,7 +1965,7 @@ theorem residue_reach (m : ℕ) (hm : Nat.Coprime m 10)
     · rcases hbad with rfl | rfl | rfl <;>
         refine htail 2 (by omega) ?_
       all_goals
-        have hg1 : g = 1 := by rw [hgdef]; native_decide
+        have hg1 : g = 1 := by rw [hgdef]; decide
         rw [hg1, Nat.div_one] at hMdef
         have hxs1 : xs = Xsmooth235 := by
           rw [if_pos hg1] at hxsdef; exact hxsdef
@@ -2078,16 +2261,18 @@ def witOk (n N : ℕ) : Bool :=
   decide (n ∣ N) && allNonzero N && decide (sigma10 N = n) &&
     decide (2 ≤ (Nat.digits 10 N).length)
 
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 4000000 in
 /-- Verification exhaustive de la table : pour tout n <= 200,
     soit witTab contient un temoin verifie, soit n est dans
-    {1,2,5,11} u 10N. Calcul natif (machine). -/
+    {1,2,5,11} u 10N. Calcul kernel (decide). -/
 theorem witSmall_all :
     ((List.range 201).all fun n =>
       match witTab.lookup n with
       | some N => witOk n N
       | none => n == 1 || n == 2 || n == 5 || n == 11 ||
           decide (10 ∣ n)) = true := by
-  native_decide
+  decide
 
 /-- LEMME-MACHINE A (table exhaustive n <= 200 — BFS de
     l'annexe, temoins certifies par witSmall_all). -/

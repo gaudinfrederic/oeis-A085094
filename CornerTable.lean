@@ -5,7 +5,7 @@ import Mathlib
     r0 <= 4 implique dans la somme des chiffres, une entree
     (m, L, t, code) avec code = somme u_e 10^e verifiant
     u_e <= 8, somme u_e = 4L + r0, fibre = t (mod m).
-    Certificat fini verifie par native_decide. -/
+    Certificat fini verifie par decide (kernel). -/
 def witCorner : List (ℕ × ℕ × ℕ × ℕ) := [
     (11, 7, 0, 8881300),
     (11, 7, 1, 8866000),
